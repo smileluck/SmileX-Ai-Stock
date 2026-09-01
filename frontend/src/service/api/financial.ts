@@ -19,11 +19,13 @@ export function fetchRunFinancialInterpretation(stockCode: string) {
   });
 }
 
-/** get financial interpretation records (paginated, filterable by stock code) */
+/** get financial interpretation records (paginated, filterable by stock code / rating / forecast direction) */
 export function fetchGetFinancialInterpretations(params: {
   page: number;
   page_size: number;
   stock_code?: string;
+  quality_rating?: string;
+  forecast_direction?: string;
 }) {
   return request<Api.Common.PaginatingQueryRecord<Api.Financial.FinancialInterpretItem>>({
     url: '/admin/financial/interpretations',

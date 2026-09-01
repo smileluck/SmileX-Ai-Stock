@@ -15,6 +15,7 @@ import {
   NEmpty,
   NInput,
   NPagination,
+  NSelect,
   NSpace,
   NTag,
   NText
@@ -125,12 +126,19 @@ const historyTotal = ref(0);
 const historyPage = ref(1);
 const historyLoading = ref(false);
 
+const RATING_OPTIONS = ['优秀', '良好', '一般', '较差'].map(v => ({ label: v, value: v }));
+const DIRECTION_OPTIONS = ['改善', '持平', '恶化'].map(v => ({ label: v, value: v }));
+const filterQualityRating = ref<string | null>(null);
+const filterForecastDirection = ref<string | null>(null);
+
 async function loadHistory() {
   historyLoading.value = true;
   try {
     const { data, error } = await fetchGetFinancialInterpretations({
       page: historyPage.value,
-      page_size: 20
+      page_size: 20,
+      quality_rating: filterQualityRating.value ?? undefined,
+      forecast_direction: filterForecastDirection.value ?? undefined
     });
     if (!error) {
       historyList.value = data?.records ?? [];
@@ -143,6 +151,11 @@ async function loadHistory() {
 
 function onHistoryPageChange(page: number) {
   historyPage.value = page;
+  loadHistory();
+}
+
+function onRatingFilterChange() {
+  historyPage.value = 1;
   loadHistory();
 }
 
@@ -443,6 +456,24 @@ onBeforeUnmount(stopPoll);
 
     <!-- 解读历史（含持仓自动解读） -->
     <NCard :bordered="false" size="small" class="card-wrapper" :title="$t('page.financial.historyTitle')">
+      <NSpace align="center" :size="12" wrap class="mb-12px">
+        <NSelect
+          v-model:value="filterQualityRating"
+          :options="RATING_OPTIONS"
+          :placeholder="$t('page.financial.ratingLabel')"
+          clearable
+          style="width: 140px"
+          @update:value="onRatingFilterChange"
+        />
+        <NSelect
+          v-model:value="filterForecastDirection"
+          :options="DIRECTION_OPTIONS"
+          :placeholder="$t('page.financial.forecastLabel')"
+          clearable
+          style="width: 140px"
+          @update:value="onRatingFilterChange"
+        />
+      </NSpace>
       <NDataTable
         :columns="historyColumns"
         :data="historyList"

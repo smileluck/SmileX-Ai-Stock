@@ -16,6 +16,8 @@
 
 - 财报解读右侧抽屉展示本期评级 + 下期预测评级
 - 解读记录列表（`financial-analysis/index.vue` historyColumns）在「报告期」后新增「本期评级」「下期预测」两列：数据取列表接口已返回的 `parsed_result`（quality_rating / next_quality_rating / forecast.direction），纯前端改动；仅 status=success 时显示 Tag，否则占位「-」；下期预测列 = 下期预测评级 Tag + 方向 Tag（改善/持平/恶化）
+- 解读记录列表新增两个筛选下拉：本期评级（优秀/良好/一般/较差）+ 下期预测（改善/持平/恶化）。后端 `/admin/financial/interpretations` 加 `quality_rating` / `forecast_direction` query 参数（Annotated+BeforeValidator 枚举归一，非法值归 None 不过滤），JSON 列过滤用 `parsed_result['quality_rating'].as_string()` / `parsed_result['forecast']['direction'].as_string()`（json 列不支持 `?` 操作符）
+- 重要数据事实：截至 2026-09-01 全部 60 条解读记录 `next_quality_rating` 均为 NULL（模型省略该字段）——下期筛选因此按 forecast.direction 实现；已同步强化 SYSTEM prompt（JSON 必须包含全部 6 个字段），新解读记录才会产出下期预测评级
 
 ## 涉及范围
 

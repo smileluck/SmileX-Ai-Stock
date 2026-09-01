@@ -18,6 +18,24 @@ def _norm_query_code(v) -> Optional[str]:
 
 StockCodeQuery = Annotated[Optional[str], BeforeValidator(_norm_query_code)]
 
+_RATING_VALUES = {"优秀", "良好", "一般", "较差"}
+_DIRECTION_VALUES = {"改善", "持平", "恶化"}
+
+
+def _norm_choice(values: set[str]):
+    def _norm(v) -> Optional[str]:
+        """枚举 query 参数：空串/非法归 None"""
+        if not v or not isinstance(v, str):
+            return None
+        v = v.strip()
+        return v if v in values else None
+
+    return _norm
+
+
+RatingQuery = Annotated[Optional[str], BeforeValidator(_norm_choice(_RATING_VALUES))]
+DirectionQuery = Annotated[Optional[str], BeforeValidator(_norm_choice(_DIRECTION_VALUES))]
+
 
 class FinancialReportItem(BaseModel):
     """财报关键指标记录"""

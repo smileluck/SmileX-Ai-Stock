@@ -22,6 +22,8 @@ from modules.financial.services.financial_service import FinancialService
 from modules.financial.services.financial_fetcher import _norm_code
 from modules.financial.schemas.financial import (
     StockCodeQuery,
+    RatingQuery,
+    DirectionQuery,
     FinancialReportItem,
     FinancialInterpretItem,
     FinancialInterpretDetailItem,
@@ -84,19 +86,29 @@ async def submit_financial_interpretation(
 @financial_router.get(
     "/interpretations",
     response_model=ResponseModel[ResponsePageDataModel[FinancialInterpretItem]],
-    summary="分页获取财报解读记录（可按股票筛选，持仓股定时自动解读 + 手动记录）",
+    summary="分页获取财报解读记录（可按股票/本期评级/下期预测方向筛选，持仓股定时自动解读 + 手动记录）",
     dependencies=[Depends(require_permission("financial:list"))],
 )
 async def get_financial_interpretations(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     stock_code: StockCodeQuery = None,
+    quality_rating: RatingQuery = None,
+    forecast_direction: DirectionQuery = None,
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
     conditions = [BusinessFinancialInterpretation.deleted_at.is_(None)]
     if stock_code:
         conditions.append(BusinessFinancialInterpretation.stock_code == stock_code)
+    if quality_rating:
+        conditions.append(
+            BusinessFinancialInterpretation.parsed_result["quality_rating"].as_string() == quality_rating
+        )
+    if forecast_direction:
+        conditions.append(
+            BusinessFinancialInterpretation.parsed_result["forecast"]["direction"].as_string() == forecast_direction
+        )
     count_result = await db.execute(
         select(func.count()).select_from(BusinessFinancialInterpretation).where(*conditions)
     )
