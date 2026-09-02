@@ -18,6 +18,7 @@ from core.exception.errors import CustomError
 from database.models.business.financial import (
     BusinessFinancialReport,
     BusinessFinancialInterpretation,
+    BusinessFinancialConfig,
 )
 from database.utils.timezone import timezone
 from modules.financial.services import financial_fetcher
@@ -47,7 +48,8 @@ _FINANCIAL_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 财报分析�
   "risks": ["风险1", "风险2"],        // 2-4 条风险点
   "forecast": {
     "direction": "改善",              // 下一报告期业绩方向：改善 / 持平 / 恶化
-    "summary": "一句话预测（40字内），须包含核心依据"
+    "summary": "一句话预测（40字内），须包含核心依据",
+    "drivers": ["驱动因素1", "驱动因素2"]  // 2-4 条下期盈利增长预测的来源分析（产品量价/产能投放/成本变化/并购并表/基数效应等具体依据）
   }
 }
 ```
@@ -63,6 +65,34 @@ _FINANCIAL_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 财报分析�
 
 
 class FinancialService:
+
+    # ------------------------------------------------------------------
+    # 分析策略配置（单行，空则使用内置默认策略）
+    # ------------------------------------------------------------------
+    @staticmethod
+    async def get_config(db: AsyncSession) -> BusinessFinancialConfig | None:
+        result = await db.execute(
+            select(BusinessFinancialConfig)
+            .where(BusinessFinancialConfig.deleted_at.is_(None))
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def update_config(
+        db: AsyncSession, prompt_template: str | None,
+    ) -> BusinessFinancialConfig:
+        """保存分析策略（upsert：已有记录则更新，否则新建）"""
+        config = await FinancialService.get_config(db)
+        if config is None:
+            config = BusinessFinancialConfig(prompt_template=prompt_template)
+            db.add(config)
+            logger.info("新建财报解读分析策略配置")
+        else:
+            config.prompt_template = prompt_template
+            config.updated_at = timezone.now()
+        await db.commit()
+        return config
 
     # ------------------------------------------------------------------
     # 财报抓取
@@ -123,6 +153,118 @@ class FinancialService:
         return list(result.scalars().all())
 
     # ------------------------------------------------------------------
+    # 股票元信息（名称/行业）
+    # ------------------------------------------------------------------
+    @staticmethod
+    async def _fetch_stock_meta_em(code: str) -> tuple[str | None, str | None]:
+        """东财 push2 个股信息兜底：一次请求同时取名称与所属行业（主源限流时走延时源）"""
+        import httpx
+
+        market = "1" if code.startswith(("6", "9", "5")) else "0"
+        for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        f"https://{host}/api/qt/stock/get",
+                        params={"secid": f"{market}.{code}", "fields": "f57,f58,f127"},
+                        headers={"Referer": "https://quote.eastmoney.com/"},
+                    )
+                data = (resp.json() or {}).get("data") or {}
+                name = str(data.get("f58") or "").strip() or None
+                industry = str(data.get("f127") or "").strip() or None
+                if name or industry:
+                    return name, industry
+            except Exception:  # noqa: BLE001
+                logger.warning("东财 push2 取个股信息失败: %s host=%s", code, host, exc_info=True)
+        return None, None
+
+    @staticmethod
+    async def _resolve_stock_meta(
+        db: AsyncSession, code: str,
+    ) -> tuple[str | None, str | None]:
+        """解析股票名称与所属行业：研报表最新记录优先；
+        名称走新浪行情兜底，行业走东财个股信息兜底（均失败返回 None）"""
+        from database.models.business.research import BusinessResearchReport
+
+        result = await db.execute(
+            select(BusinessResearchReport.stock_name)
+            .where(
+                BusinessResearchReport.stock_code == code,
+                BusinessResearchReport.stock_name.is_not(None),
+                BusinessResearchReport.deleted_at.is_(None),
+            )
+            .order_by(
+                BusinessResearchReport.published_date.desc().nullslast(),
+                BusinessResearchReport.fetched_at.desc(),
+            )
+            .limit(1)
+        )
+        name = result.scalar_one_or_none()
+
+        result = await db.execute(
+            select(BusinessResearchReport.industry)
+            .where(
+                BusinessResearchReport.stock_code == code,
+                BusinessResearchReport.industry.is_not(None),
+                BusinessResearchReport.deleted_at.is_(None),
+            )
+            .order_by(
+                BusinessResearchReport.published_date.desc().nullslast(),
+                BusinessResearchReport.fetched_at.desc(),
+            )
+            .limit(1)
+        )
+        industry = result.scalar_one_or_none()
+
+        from modules.financial.services.financial_fetcher import _fetch_stock_name
+        if not name or not industry:
+            em_name, em_industry = await FinancialService._fetch_stock_meta_em(code)
+            name = name or em_name
+            industry = industry or em_industry
+        if not name:
+            name = await _fetch_stock_name(code)  # 新浪行情最终兜底
+        return name, industry
+
+    @staticmethod
+    async def get_latest_research_briefs(
+        db: AsyncSession, codes: list[str],
+    ) -> dict[str, dict]:
+        """按代码批量取每股最新一条研报摘要（评级/机构/盈利预测），供解读列表对照展示"""
+        if not codes:
+            return {}
+        from database.models.business.research import BusinessResearchReport
+
+        result = await db.execute(
+            select(
+                BusinessResearchReport.stock_code,
+                BusinessResearchReport.org_name,
+                BusinessResearchReport.rating,
+                BusinessResearchReport.published_date,
+                BusinessResearchReport.forecast,
+            )
+            .where(
+                BusinessResearchReport.stock_code.in_(codes),
+                BusinessResearchReport.deleted_at.is_(None),
+            )
+            .order_by(
+                BusinessResearchReport.stock_code,
+                BusinessResearchReport.published_date.desc().nullslast(),
+                BusinessResearchReport.fetched_at.desc(),
+            )
+        )
+        briefs: dict[str, dict] = {}
+        for code, org_name, rating, published_date, forecast in result.all():
+            if code in briefs:
+                continue  # 每股只取排序后的第一条
+            briefs[code] = {
+                "org_name": org_name,
+                "rating": rating,
+                "published_date": published_date.isoformat() if published_date else None,
+                "forecast": forecast,
+            }
+        return briefs
+
+    # ------------------------------------------------------------------
     # AI 解读（异步提交模式，与 AnalysisExecutor 一致）
     # ------------------------------------------------------------------
     @staticmethod
@@ -170,9 +312,13 @@ class FinancialService:
             )
 
         now = timezone.now()
+        stock_name, industry = await FinancialService._resolve_stock_meta(db, code)
+        if not stock_name:
+            stock_name = latest.stock_name
         interp = BusinessFinancialInterpretation(
             stock_code=code,
-            stock_name=latest.stock_name,
+            stock_name=stock_name,
+            industry=industry,
             report_period=latest.report_period,
             run_date=now.strftime("%Y-%m-%d"),
             trigger_type=trigger_type,
@@ -246,12 +392,19 @@ class FinancialService:
 
         import json
         lines = [f"当前时间：{timezone.now().strftime('%Y-%m-%d %H:%M')}"]
+        if interp.industry:
+            lines.append(f"所属行业：{interp.industry}")
         for r in reports:
             lines.append(
                 f"报告期 {r.report_period}（{r.stock_name or r.stock_code}）：\n"
                 + json.dumps(r.metrics or {}, ensure_ascii=False)
             )
         lines.append("请基于以上真实财务指标输出 JSON 摘要与 markdown 财报解读报告（最新报告期在最前）。")
+        strategy = await FinancialService.get_config(db)
+        if strategy and strategy.prompt_template and strategy.prompt_template.strip():
+            lines.append(
+                f"分析策略要求（用户定制，生成时必须遵循）：\n{strategy.prompt_template.strip()}"
+            )
         user_prompt = "\n\n".join(lines)
 
         raw_text = await _run_llm(

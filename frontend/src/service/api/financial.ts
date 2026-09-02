@@ -41,3 +41,20 @@ export function fetchGetFinancialInterpretationDetail(interpretationId: number) 
     method: 'get'
   });
 }
+
+/** get financial interpretation strategy config (empty prompt = built-in default) */
+export function fetchGetFinancialConfig() {
+  return request<Api.Financial.FinancialConfigItem>({
+    url: '/admin/financial/config',
+    method: 'get'
+  });
+}
+
+/** save financial interpretation strategy config */
+export function fetchUpdateFinancialConfig(promptTemplate: string | null) {
+  return request<Api.Financial.FinancialConfigItem>({
+    url: '/admin/financial/config',
+    method: 'put',
+    data: { prompt_template: promptTemplate }
+  });
+}

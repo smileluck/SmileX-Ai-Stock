@@ -79,6 +79,23 @@ class BusinessFinancialInterpretation(Base):
         JSON, nullable=True, default=None,
         comment="结构化摘要：{quality_rating, highlights, risks, forecast}",
     )
+    industry: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, default=None,
+        comment="所属行业（研报表/东财个股信息）",
+    )
     error_msg: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, default=None, comment="错误信息",
+    )
+
+
+class BusinessFinancialConfig(Base):
+    """财报 AI 解读分析策略配置表（单行，prompt 为空则使用内置默认策略）"""
+
+    __table_args__ = (
+        {"comment": "财报 AI 解读分析策略配置表"},
+    )
+
+    prompt_template: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, default=None,
+        comment="分析策略定制提示词（关注面/风格/风控偏好等，空则使用默认策略）",
     )

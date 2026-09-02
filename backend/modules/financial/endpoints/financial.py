@@ -28,6 +28,9 @@ from modules.financial.schemas.financial import (
     FinancialInterpretItem,
     FinancialInterpretDetailItem,
     FinancialInterpretSubmitResult,
+    ResearchBrief,
+    FinancialConfigItem,
+    FinancialConfigUpdateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,6 +124,14 @@ async def get_financial_interpretations(
         .limit(page_size)
     )
     items = [FinancialInterpretItem.model_validate(row) for row in result.scalars().all()]
+    # 附加每股最新券商研报摘要（盈利预测对照展示）
+    briefs = await FinancialService.get_latest_research_briefs(
+        db, [it.stock_code for it in items]
+    )
+    for it in items:
+        brief = briefs.get(it.stock_code)
+        if brief:
+            it.research_brief = ResearchBrief(**brief)
     return response_base.success(data=_page_data(items, page, page_size, total))
 
 
@@ -147,4 +158,44 @@ async def get_financial_interpretation_detail(
             error=CustomErrorCode.FINANCIAL_INTERPRET_NOT_FOUND,
             msg="财报解读记录不存在或已删除",
         )
-    return response_base.success(data=FinancialInterpretDetailItem.model_validate(interp))
+    detail = FinancialInterpretDetailItem.model_validate(interp)
+    briefs = await FinancialService.get_latest_research_briefs(db, [interp.stock_code])
+    brief = briefs.get(interp.stock_code)
+    if brief:
+        detail.research_brief = ResearchBrief(**brief)
+    return response_base.success(data=detail)
+
+
+@financial_router.get(
+    "/config",
+    response_model=ResponseModel[FinancialConfigItem],
+    summary="获取财报解读分析策略配置（prompt 为空则使用内置默认策略）",
+    dependencies=[Depends(require_permission("financial:list"))],
+)
+async def get_financial_config(
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    config = await FinancialService.get_config(db)
+    return response_base.success(
+        data=FinancialConfigItem.model_validate(config) if config else FinancialConfigItem(),
+    )
+
+
+@financial_router.put(
+    "/config",
+    response_model=ResponseModel[FinancialConfigItem],
+    summary="保存财报解读分析策略配置（追加注入解读 user prompt，空则恢复默认策略）",
+    dependencies=[Depends(require_permission("financial:run"))],
+)
+async def update_financial_config(
+    req: FinancialConfigUpdateRequest,
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    prompt = req.prompt_template.strip() if req.prompt_template else None
+    config = await FinancialService.update_config(db, prompt)
+    return response_base.success(
+        data=FinancialConfigItem.model_validate(config),
+        msg="分析策略已保存",
+    )

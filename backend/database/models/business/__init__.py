@@ -21,7 +21,11 @@ from .block_trade import (
 
 from .macro import BusinessMacroIndicator
 
-from .financial import BusinessFinancialReport, BusinessFinancialInterpretation
+from .financial import (
+    BusinessFinancialReport,
+    BusinessFinancialInterpretation,
+    BusinessFinancialConfig,
+)
 
 from .research import BusinessResearchReport
 

@@ -1564,9 +1564,17 @@ declare namespace App {
           historyTitle: string;
           stockCol: string;
           periodCol: string;
+          industryCol: string;
           ratingLabel: string;
           nextRatingLabel: string;
           forecastLabel: string;
+          forecastDriversLabel: string;
+          researchBriefLabel: string;
+          strategyBtn: string;
+          strategyTitle: string;
+          strategyTip: string;
+          strategyPlaceholder: string;
+          strategySaved: string;
           highlightsLabel: string;
           risksLabel: string;
           emptyTip: string;

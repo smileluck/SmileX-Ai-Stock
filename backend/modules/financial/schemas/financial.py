@@ -5,7 +5,7 @@
 from datetime import datetime
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, BeforeValidator
+from pydantic import BaseModel, ConfigDict, BeforeValidator, Field
 
 
 def _norm_query_code(v) -> Optional[str]:
@@ -50,6 +50,15 @@ class FinancialReportItem(BaseModel):
     fetched_at: Optional[datetime] = None
 
 
+class ResearchBrief(BaseModel):
+    """每股最新一条券商研报摘要（盈利预测对照）"""
+
+    org_name: Optional[str] = None
+    rating: Optional[str] = None
+    published_date: Optional[str] = None
+    forecast: Optional[dict] = None  # {年份: {eps, pe}}
+
+
 class FinancialInterpretItem(BaseModel):
     """财报解读记录项（列表用，不含报告原文）"""
 
@@ -58,11 +67,13 @@ class FinancialInterpretItem(BaseModel):
     id: int
     stock_code: str
     stock_name: Optional[str] = None
+    industry: Optional[str] = None
     report_period: Optional[str] = None
     run_date: str
     trigger_type: str
     status: str  # running / success / failed
     parsed_result: Optional[dict] = None
+    research_brief: Optional[ResearchBrief] = None
     error_msg: Optional[str] = None
     created_at: Optional[datetime] = None
 
@@ -78,3 +89,18 @@ class FinancialInterpretSubmitResult(BaseModel):
 
     interpretation_id: int
     status: str = "running"
+
+
+class FinancialConfigItem(BaseModel):
+    """财报解读分析策略配置（prompt 为空则使用内置默认策略）"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    prompt_template: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class FinancialConfigUpdateRequest(BaseModel):
+    """分析策略保存请求（prompt 为空表示恢复默认策略）"""
+
+    prompt_template: Optional[str] = Field(default=None, max_length=2000)

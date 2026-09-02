@@ -20,7 +20,18 @@ declare namespace Api {
       forecast?: {
         direction?: string;
         summary?: string;
+        /** 下期盈利增长预测的来源分析（驱动因素） */
+        drivers?: string[];
       };
+    }
+
+    /** 每股最新一条券商研报摘要（盈利预测对照） */
+    export interface ResearchBrief {
+      org_name: string | null;
+      rating: string | null;
+      published_date: string | null;
+      /** {年份: {eps, pe}} */
+      forecast: Record<string, { eps?: number | string; pe?: number | string }> | null;
     }
 
     /** 财报解读记录（列表项） */
@@ -28,11 +39,13 @@ declare namespace Api {
       id: number;
       stock_code: string;
       stock_name: string | null;
+      industry: string | null;
       report_period: string | null;
       run_date: string;
       trigger_type: 'schedule' | 'manual';
       status: 'running' | 'success' | 'failed';
       parsed_result: FinancialParsedResult | null;
+      research_brief: ResearchBrief | null;
       error_msg: string | null;
       created_at: string | null;
     }
@@ -46,6 +59,12 @@ declare namespace Api {
     export interface FinancialInterpretSubmitResult {
       interpretation_id: number;
       status: string;
+    }
+
+    /** 财报解读分析策略配置（prompt 为空则使用内置默认策略） */
+    export interface FinancialConfigItem {
+      prompt_template: string | null;
+      updated_at: string | null;
     }
   }
 }

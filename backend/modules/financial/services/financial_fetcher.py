@@ -73,6 +73,28 @@ def _norm_code(stock_code: str) -> str:
     return digits.zfill(6) if digits else ""
 
 
+def _to_sina_code(code: str) -> str:
+    """6 位代码 → 新浪格式（sh/sz/bj 前缀）"""
+    if code.startswith(("6", "9", "5")):
+        return f"sh{code}"
+    if code.startswith(("4", "8")):
+        return f"bj{code}"
+    return f"sz{code}"
+
+
+async def _fetch_stock_name(code: str) -> Optional[str]:
+    """新浪批量行情兜底取股票名称（新浪财务指标接口的「股票名称」列经常为空）"""
+    from modules.stock.services._sina import fetch_spot_quotes
+
+    try:
+        quotes = await fetch_spot_quotes([_to_sina_code(code)])
+        name = quotes.get(_to_sina_code(code), {}).get("name")
+        return str(name).strip() if name else None
+    except Exception:  # noqa: BLE001
+        logger.warning("新浪行情取股票名称失败: %s", code, exc_info=True)
+        return None
+
+
 async def fetch_financial_reports(stock_code: str, start_year: Optional[str] = None) -> list[dict]:
     """新浪财务指标抓取：返回近 N 个报告期的关键指标列表（report_period 倒序）"""
     import akshare as ak
@@ -93,6 +115,8 @@ async def fetch_financial_reports(stock_code: str, start_year: Optional[str] = N
         return []
 
     stock_name = str(df.iloc[0].get("股票名称", "")).strip() if "股票名称" in df.columns else ""
+    if not stock_name:
+        stock_name = await _fetch_stock_name(code) or ""
     items: list[dict] = []
     for _, row in df.iterrows():
         period = _norm_period(row.get("日期"))

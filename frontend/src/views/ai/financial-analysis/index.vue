@@ -15,6 +15,7 @@ import {
   NEmpty,
   NInput,
   NPagination,
+  NPopover,
   NSelect,
   NSpace,
   NTag,
@@ -24,10 +25,12 @@ import type { DataTableColumns } from 'naive-ui';
 import dayjs from 'dayjs';
 import MarkdownIt from 'markdown-it';
 import {
+  fetchGetFinancialConfig,
   fetchGetFinancialInterpretationDetail,
   fetchGetFinancialInterpretations,
   fetchGetFinancialReports,
-  fetchRunFinancialInterpretation
+  fetchRunFinancialInterpretation,
+  fetchUpdateFinancialConfig
 } from '@/service/api';
 import { useAuth } from '@/hooks/business/auth';
 import { $t } from '@/locales';
@@ -159,6 +162,53 @@ function onRatingFilterChange() {
   loadHistory();
 }
 
+/** 券商盈利预测对照文案：机构 评级 · 年份EPS/PE */
+function researchBriefText(brief: Api.Financial.ResearchBrief | null): string {
+  if (!brief) return '';
+  const parts: string[] = [];
+  if (brief.org_name) parts.push(brief.org_name);
+  if (brief.rating) parts.push(brief.rating);
+  const years = Object.keys(brief.forecast ?? {})
+    .sort()
+    .slice(0, 2)
+    .map(y => {
+      const f = brief.forecast?.[y] ?? {};
+      const seg: string[] = [];
+      if (f.eps !== undefined && f.eps !== null) seg.push(`EPS ${f.eps}`);
+      if (f.pe !== undefined && f.pe !== null) seg.push(`PE ${f.pe}`);
+      return seg.length ? `${y} ${seg.join(' / ')}` : '';
+    })
+    .filter(Boolean);
+  const head = parts.length ? parts.join(' ') : '';
+  return [head, ...years].filter(Boolean).join(' · ');
+}
+
+// ==================== 分析策略配置 ====================
+const strategyShow = ref(false);
+const strategyPrompt = ref('');
+const strategySaving = ref(false);
+const strategyPlaceholder = $t('page.financial.strategyPlaceholder');
+
+async function openStrategy() {
+  strategyShow.value = true;
+  const { data, error } = await fetchGetFinancialConfig();
+  if (!error) strategyPrompt.value = data?.prompt_template ?? '';
+}
+
+async function saveStrategy() {
+  strategySaving.value = true;
+  try {
+    const prompt = strategyPrompt.value.trim() || null;
+    const { error } = await fetchUpdateFinancialConfig(prompt);
+    if (!error) {
+      window.$message?.success($t('page.financial.strategySaved'));
+      strategyShow.value = false;
+    }
+  } finally {
+    strategySaving.value = false;
+  }
+}
+
 async function viewHistoryRow(row: Api.Financial.FinancialInterpretItem) {
   // 右侧抽屉查看详情，不替换上方查询结果
   drawerShow.value = true;
@@ -212,12 +262,22 @@ const historyColumns = computed<DataTableColumns<Api.Financial.FinancialInterpre
   {
     key: 'stock_code',
     title: $t('page.financial.stockCol'),
-    width: 140,
+    width: 150,
     render: row => (
-      <span class="text-12px">
-        {row.stock_code} {row.stock_name ? `- ${row.stock_name}` : ''}
-      </span>
+      <div class="flex flex-col justify-center">
+        <span class="text-13px font-500">{row.stock_name || row.stock_code}</span>
+        <span class="text-12px" style="color: var(--n-text-color-3, #999)">
+          {row.stock_name ? row.stock_code : ''}
+        </span>
+      </div>
     )
+  },
+  {
+    key: 'industry',
+    title: $t('page.financial.industryCol'),
+    width: 100,
+    ellipsis: { tooltip: true },
+    render: row => <span class="text-12px">{row.industry || '-'}</span>
   },
   {
     key: 'report_period',
@@ -241,13 +301,16 @@ const historyColumns = computed<DataTableColumns<Api.Financial.FinancialInterpre
   {
     key: 'next_forecast',
     title: $t('page.financial.forecastLabel'),
-    width: 150,
+    width: 170,
     render: row => {
       if (row.status !== 'success') return <span class="text-12px">-</span>;
       const next = row.parsed_result?.next_quality_rating;
       const dir = row.parsed_result?.forecast?.direction;
-      if (!next && !dir) return <span class="text-12px">-</span>;
-      return (
+      const drivers = row.parsed_result?.forecast?.drivers ?? [];
+      const summary = row.parsed_result?.forecast?.summary ?? '';
+      const briefText = researchBriefText(row.research_brief);
+      const hasDetail = drivers.length > 0 || summary || briefText;
+      const tags = (
         <NSpace align="center" size={4} wrap={false}>
           {next ? (
             <NTag type={ratingType(next)} size="small" bordered={false}>
@@ -260,6 +323,35 @@ const historyColumns = computed<DataTableColumns<Api.Financial.FinancialInterpre
             </NTag>
           ) : null}
         </NSpace>
+      );
+      if (!hasDetail) return tags;
+      return (
+        <NPopover trigger="hover" placement="left" style={{ maxWidth: '360px' }}>
+          {{
+            trigger: () => tags,
+            default: () => (
+              <div class="flex flex-col gap-4px py-2px">
+                {summary ? <div class="text-12px">{summary}</div> : null}
+                {drivers.length > 0 ? (
+                  <div>
+                    <div class="mb-2px text-12px font-500">{$t('page.financial.forecastDriversLabel')}</div>
+                    <ul class="m-0 pl-16px">
+                      {drivers.map((p, i) => (
+                        <li key={i} class="text-12px leading-20px">{p}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {briefText ? (
+                  <div>
+                    <div class="mb-2px text-12px font-500">{$t('page.financial.researchBriefLabel')}</div>
+                    <div class="text-12px">{briefText}</div>
+                  </div>
+                ) : null}
+              </div>
+            )
+          }}
+        </NPopover>
       );
     }
   },
@@ -369,6 +461,9 @@ onBeforeUnmount(stopPoll);
         >
           {{ $t('page.financial.interpretBtn') }}
         </NButton>
+        <NButton v-if="canRun" size="small" tertiary @click="openStrategy">
+          {{ $t('page.financial.strategyBtn') }}
+        </NButton>
       </NSpace>
     </NCard>
 
@@ -420,7 +515,24 @@ onBeforeUnmount(stopPoll);
           <NDescriptionsItem :label="$t('page.aiAnalysis.summaryLabel')">
             {{ current.report_period ?? '-' }}
           </NDescriptionsItem>
+          <NDescriptionsItem :label="$t('page.financial.industryCol')">
+            {{ current.industry ?? '-' }}
+          </NDescriptionsItem>
         </NDescriptions>
+        <div v-if="parsed?.forecast?.drivers?.length" class="mb-12px">
+          <NText class="mb-4px block text-13px font-500">
+            {{ $t('page.financial.forecastDriversLabel') }}
+          </NText>
+          <ul class="m-0 pl-20px">
+            <li v-for="(p, i) in parsed.forecast.drivers" :key="i" class="text-13px leading-22px">{{ p }}</li>
+          </ul>
+        </div>
+        <div v-if="researchBriefText(current?.research_brief ?? null)" class="mb-12px">
+          <NText class="mb-4px block text-13px font-500">
+            {{ $t('page.financial.researchBriefLabel') }}
+          </NText>
+          <div class="text-13px">{{ researchBriefText(current?.research_brief ?? null) }}</div>
+        </div>
         <div v-if="parsed?.highlights?.length" class="mb-12px">
           <NText class="mb-4px block text-13px font-500">{{ $t('page.financial.highlightsLabel') }}</NText>
           <ul class="m-0 pl-20px">
@@ -524,6 +636,9 @@ onBeforeUnmount(stopPoll);
             <NDescriptionsItem :label="$t('page.financial.periodCol')">
               {{ drawerDetail.report_period ?? '-' }}
             </NDescriptionsItem>
+            <NDescriptionsItem :label="$t('page.financial.industryCol')">
+              {{ drawerDetail.industry ?? '-' }}
+            </NDescriptionsItem>
             <NDescriptionsItem :label="$t('page.financial.ratingLabel')">
               <NTag :type="ratingType(drawerParsed.quality_rating)" size="small">
                 {{ drawerParsed.quality_rating ?? '-' }}
@@ -543,6 +658,22 @@ onBeforeUnmount(stopPoll);
               </NSpace>
             </NDescriptionsItem>
           </NDescriptions>
+          <div v-if="drawerParsed?.forecast?.drivers?.length" class="mb-12px">
+            <NText class="mb-4px block text-13px font-500">
+              {{ $t('page.financial.forecastDriversLabel') }}
+            </NText>
+            <ul class="m-0 pl-20px">
+              <li v-for="(p, i) in drawerParsed.forecast.drivers" :key="i" class="text-13px leading-22px">
+                {{ p }}
+              </li>
+            </ul>
+          </div>
+          <div v-if="researchBriefText(drawerDetail?.research_brief ?? null)" class="mb-12px">
+            <NText class="mb-4px block text-13px font-500">
+              {{ $t('page.financial.researchBriefLabel') }}
+            </NText>
+            <div class="text-13px">{{ researchBriefText(drawerDetail?.research_brief ?? null) }}</div>
+          </div>
           <div v-if="drawerParsed?.highlights?.length" class="mb-12px">
             <NText class="mb-4px block text-13px font-500">{{ $t('page.financial.highlightsLabel') }}</NText>
             <ul class="m-0 pl-20px">
@@ -559,6 +690,33 @@ onBeforeUnmount(stopPoll);
         </template>
 
         <NEmpty v-else class="py-48px" :description="$t('page.financial.emptyTip')" />
+      </NDrawerContent>
+    </NDrawer>
+
+    <!-- 分析策略配置抽屉（右侧） -->
+    <NDrawer v-model:show="strategyShow" :width="480" placement="right">
+      <NDrawerContent :title="$t('page.financial.strategyTitle')" closable>
+        <NText depth="3" class="mb-8px block text-12px">
+          {{ $t('page.financial.strategyTip') }}
+        </NText>
+        <NInput
+          v-model:value="strategyPrompt"
+          type="textarea"
+          :rows="12"
+          :maxlength="2000"
+          show-count
+          :placeholder="strategyPlaceholder"
+        />
+        <template #footer>
+          <NSpace :size="12">
+            <NButton size="small" @click="strategyShow = false">
+              {{ $t('common.cancel') }}
+            </NButton>
+            <NButton size="small" type="primary" :loading="strategySaving" @click="saveStrategy">
+              {{ $t('common.confirm') }}
+            </NButton>
+          </NSpace>
+        </template>
       </NDrawerContent>
     </NDrawer>
   </div>
