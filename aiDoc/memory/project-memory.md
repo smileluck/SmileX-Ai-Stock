@@ -10,6 +10,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-09-01 板块轮动策略分析（近期轮动/明日候选/高低切换）](./business/2026-09-01_rotation_strategy_analysis.md) — 新页 rotation-analysis（菜单8032）双轨制：规则指标（阶段/评分/操作建议/高低切换信号，读时算不入库）+ AI rotation 报告类型（仅 close，板块层推演不点名个股）；新表 business_board_stock_daily（迁移0030）+ push2his 板块日K回填（board_type=all 合并单任务单锁）；坑：board_code 跨源（东财BK/腾讯pt0）须按板块名解析东财代码、push2/push2his IP 级限流须每请求逐域名降级重试、回填跳过当日半日 bar、elegant-router transform.ts routeMap 易漏
 - [2026-08-31 行业板块滚动修复 + 领涨股前三名 + 热门个股连板概率](./business/2026-08-31_board_top3_leading_stocks_limitup_prob.md) — 行业板块页 flex-height 滚动修复；`business_board_daily` 加 `leading_stocks` JSON（迁移 0028），东财源按板块补抓成分涨幅前三（push2 clist，域名降级链 push2→push2delay）；热门个股连板概率=启发式评分（连板高度/封成比/炸板/首封/换手，读时算不入库）
 - [2026-08-29 每日资讯分析+宏观指数+财报解读](./business/2026-08-29_news_analysis_macro_financial.md) — analysis 加 news 类型（morning/weekly，宏观/行业与个股各≤10条）+ 新模块 macro（中美 CPI/PPI/M1/M2，akshare→upsert，注入大盘/资讯分析）与 financial（新浪财务指标→AI 解读预测，持仓+信号标的定时自动）；迁移 0026 三新表+三菜单；坑：MappedAsDataclass 字段顺序（无默认在前）、APScheduler 星期写 `sun`
 - [2026-08-29 动态止盈：回撤止盈 + AI 复核兜底](./business/2026-08-29_trailing_stop_take_profit.md) — 持仓峰值回撤超策略阈值（trailing_drawdown_pct，建仓快照）且仍浮盈→trailing_stop 平仓；回撤达半阈值触发 AI review 复核兜底；迁移 0025 加三列（存量持仓回填峰值/快照）

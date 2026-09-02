@@ -10,6 +10,7 @@
 
 ## 需求索引
 
+- [2026-09-01 板块轮动策略分析（近期轮动/明日候选/高低切换）](./2026-09-01_rotation_strategy_analysis.md) — 新页 rotation-analysis（菜单8032）双轨制：规则指标（阶段/评分/操作建议/切换信号，读时算不入库）+ AI rotation 类型报告（仅close，板块层推演不点名个股）；新表 business_board_stock_daily（迁移0030）+ push2his 日K回填（all=一个后台任务单锁）；坑：board_code 跟随列表源（东财BK/腾讯pt0）需按名解析东财代码、push2his/push2 IP 级限流断连须每请求逐域名降级重试、回填须跳过当日半日bar、elegant-router transform.ts routeMap 易漏、SFC 动态 i18n 键用 as const+keyof typeof
 - [2026-08-31 行业板块滚动修复 + 领涨股前三名 + 热门个股连板概率](./2026-08-31_board_top3_leading_stocks_limitup_prob.md) — 行业板块页 flex-height 滚动修复；`business_board_daily` 加 `leading_stocks` JSON（迁移 0028），东财源按板块补抓成分涨幅前三（push2 clist，域名降级链 push2→push2delay，并发5+0.1s 限速，腾讯/同花顺兜底单只）；热门个股连板概率=`calc_continuation` 启发式评分（连板高度/封成比/炸板/首封/换手，读时算不入库，封板时间 092500 格式）；i18n 三处同步
 - [2026-08-29 券商研报采集+研报中心+研报掘金策略](./2026-08-29_research_report_module.md) — 新模块 research（akshare 东财 `stock_research_report_em` 按股采集，url 去重 upsert，每4小时任务 `research.sync_reports` 持仓+近30天信号标的）；研报中心页（统计卡片/评级分布/热门TOP/筛选列表，菜单 8029-8031，权限 research:list/sync）；Agent 工具 +2（get_research_reports/get_report_consensus）注入策略 SYSTEM_PROMPT；预置策略「研报掘金」（seq=12，股票池设单只个股即对该公司分析）；坑：MappedAsDataclass 必填列在前、Date 列塞 str 报 toordinal、SQLAlchemy Result.all() 只能消费一次
 

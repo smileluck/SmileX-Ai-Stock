@@ -408,3 +408,315 @@ async def fetch_board_fund_flow(board_type: str) -> dict[str, float | None]:
         if name:
             result[name] = num(row.get(flow_col))
     return result
+
+
+# ------------------------------------------------------------------
+# 轮动分析扩展：板块历史日K（回填）+ 板块全部成分股（高低切换数据源）
+# ------------------------------------------------------------------
+# push2his 主域名存在 IP 级限流（直接断连），编号 CDN 域名与延时源为逃生通道
+_EM_KLINE_HOSTS = (
+    "push2his.eastmoney.com",
+    "44.push2his.eastmoney.com",
+    "12.push2his.eastmoney.com",
+)
+# 板块名->代码映射分页拉取间隔：映射页单页 100 条，快速连发易触发限流
+_EM_BOARD_MAP_INTERVAL = 0.5
+
+
+async def _em_request_with_hosts(
+    client: httpx.AsyncClient, path: str, params: dict,
+    hosts: tuple[str, ...], attempts_per_host: int = 2,
+) -> dict:
+    """东财行情请求：逐域名 + 逐次退避重试，统一校验 rc==0
+
+    IP 级限流表现为直接断连且时好时坏，单次域名探测不足以覆盖整个批次，
+    因此每个请求都在实时源失败后自动降级延时源/编号 CDN 域名。
+    """
+    last_error: Exception | None = None
+    for host in hosts:
+        url = f"https://{host}{path}"
+        for i in range(attempts_per_host):
+            try:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                payload = resp.json()
+                if payload.get("rc") != 0:
+                    raise RuntimeError(f"东财接口返回错误: {payload.get('rt')}")
+                return payload
+            except Exception as e:  # noqa: BLE001
+                last_error = e
+                if i < attempts_per_host - 1:
+                    await asyncio.sleep(0.5 * (i + 1))
+    raise last_error  # type: ignore[misc]
+
+
+def _em_clist_get(client: httpx.AsyncClient, params: dict) -> dict:
+    """clist 行情请求（实时源 -> 延时源自动降级）"""
+    return _em_request_with_hosts(
+        client, "/api/qt/clist/get", params, _EM_CLIST_HOSTS,
+    )
+
+
+def _em_kline_get(client: httpx.AsyncClient, params: dict) -> dict:
+    """板块日K请求（主域名 -> 编号 CDN 域名自动降级）"""
+    return _em_request_with_hosts(
+        client, "/api/qt/stock/kline/get", params, _EM_KLINE_HOSTS,
+    )
+
+
+def _norm_board_name(name: str) -> str:
+    """板块名归一化：全角罗马数字/括号转半角、去空白，供跨数据源名称匹配"""
+    s = str(name)
+    for a, b in (("Ⅱ", "II"), ("Ⅰ", "I"), ("（", "("), ("）", ")"), (" ", ""), ("\u3000", "")):
+        s = s.replace(a, b)
+    return s.lower()
+
+
+def _strip_board_name_suffix(norm: str) -> str:
+    """去除归一化板块名的层级后缀（Ⅱ/I、(二级)等），作为名称匹配兜底"""
+    for suf in ("ii", "i", "(一级)", "(二级)", "(三级)", "(申万)"):
+        if norm.endswith(suf) and len(norm) > len(suf):
+            return norm[: -len(suf)]
+    return norm
+
+
+async def _fetch_em_board_code_map(
+    client: httpx.AsyncClient, board_type: str,
+) -> dict[str, str]:
+    """东财板块名 -> 板块代码(BKxxxx)映射（含归一化名键）
+
+    business_board_daily 的 board_code 跟随当日板块列表源：东财主源为 BKxxxx，
+    腾讯兜底源为 pt0xxxxx；而成分股/板块日K接口只认东财代码，需按名称解析。
+    """
+    fs = "m:90+t:2" if board_type == "industry" else "m:90+t:3"
+    name_map: dict[str, str] = {}
+    page, page_size = 1, 100
+    while True:
+        payload = await _em_clist_get(
+            client,
+            {
+                "pn": page,
+                "pz": page_size,
+                "po": 1,
+                "np": 1,
+                "fltt": 2,
+                "invt": 2,
+                "fid": "f3",
+                "fs": fs,
+                "fields": "f12,f14",
+            },
+        )
+        data = payload.get("data") or {}
+        diff = data.get("diff") or []
+        for d in diff:
+            code = str(d.get("f12", "")).strip()
+            name = str(d.get("f14", "")).strip()
+            if code and name:
+                name_map[name] = code
+                norm = _norm_board_name(name)
+                name_map.setdefault(norm, code)
+                stripped = _strip_board_name_suffix(norm)
+                if stripped != norm:
+                    name_map.setdefault(stripped, code)
+        total = num(data.get("total")) or 0
+        if not diff or page * page_size >= total:
+            break
+        page += 1
+        await asyncio.sleep(_EM_BOARD_MAP_INTERVAL)
+    return name_map
+
+
+def _resolve_em_board_code(board: dict, name_map: dict[str, str]) -> str:
+    """板块字典 -> 东财板块代码：已是 BK 代码直接用，否则按板块名解析"""
+    code = str(board.get("board_code", "")).strip()
+    if code.upper().startswith("BK"):
+        return code
+    name = str(board.get("board_name", "")).strip()
+    norm = _norm_board_name(name)
+    return (
+        name_map.get(name) or name_map.get(norm)
+        or name_map.get(_strip_board_name_suffix(norm)) or ""
+    )
+
+
+async def _fetch_board_kline_paged(
+    client: httpx.AsyncClient, board_code: str, days: int
+) -> list[dict]:
+    """东财 push2his 板块日K（行业/概念板块统一 90 市场），返回升序列表
+
+    用于回填 business_board_daily 历史缺失日期：日K只含行情字段，
+    净流入/涨跌家数/领涨股等快照字段历史无法补齐，回填行留空。
+    返回 [{date, change_pct, turnover, volume, turnover_rate}]。
+    """
+    payload = await _em_kline_get(
+        client,
+        {
+            "secid": f"90.{board_code}",
+            "klt": 101,   # 日K
+            "fqt": 1,     # 前复权
+            "lmt": days,
+            "end": "20500101",
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            # f51-日期, f52-开, f53-收, f54-高, f55-低, f56-量(手), f57-额(元),
+            # f58-振幅, f59-涨跌幅, f60-涨跌额, f61-换手率
+            "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+        },
+    )
+    klines = ((payload.get("data") or {}).get("klines")) or []
+    items = []
+    for row in klines:
+        parts = str(row).split(",")
+        if len(parts) < 11:
+            continue
+        items.append({
+            "date": parts[0],
+            "change_pct": num(parts[8]),
+            "turnover": num(parts[6]),
+            "volume": num(parts[5]),
+            "turnover_rate": num(parts[10]),
+        })
+    return items
+
+
+async def fetch_board_history_kline(board_code: str, days: int = 60) -> list[dict]:
+    """东财 push2his 板块日K（独立连接版，单板块调用）"""
+    async with httpx.AsyncClient(timeout=10, headers=_QQ_HEADERS) as client:
+        return await _fetch_board_kline_paged(client, board_code, days)
+
+
+async def _fetch_board_constituents_paged(
+    client: httpx.AsyncClient, board_code: str
+) -> list[dict]:
+    """东财 push2 板块全部成分股（分页拉全，按涨跌幅降序），复用调用方传入的连接
+
+    返回 [{stock_code, stock_name, price, change_pct, amount, turnover_rate,
+    gain_5d, gain_10d}]；gain_5d/gain_10d 为数据源近5/10日涨跌幅（f109/f160），
+    源未提供时为 None，由查询侧按成分股日快照自累计兜底。
+    """
+    items: list[dict] = []
+    page, page_size = 1, 100
+    while True:
+        payload = await _em_clist_get(
+            client,
+            {
+                "pn": page,
+                "pz": page_size,
+                "po": 1,
+                "np": 1,
+                "fltt": 2,
+                "invt": 2,
+                "fid": "f3",  # 按涨跌幅降序
+                "fs": f"b:{board_code}",
+                # f12-代码, f14-名称, f2-最新价, f3-涨跌幅, f6-成交额, f8-换手率,
+                # f109-近5日涨跌幅, f160-近10日涨跌幅
+                "fields": "f12,f14,f2,f3,f6,f8,f109,f160",
+            },
+        )
+        data = payload.get("data") or {}
+        diff = data.get("diff") or []
+        for d in diff:
+            code = normalize_code(d.get("f12")) or None
+            name = str(d.get("f14", "")).strip()
+            if not code or not name:
+                continue
+            items.append({
+                "stock_code": code,
+                "stock_name": name,
+                "price": num(d.get("f2")),
+                "change_pct": num(d.get("f3")),
+                "amount": num(d.get("f6")),
+                "turnover_rate": num(d.get("f8")),
+                "gain_5d": num(d.get("f109")),
+                "gain_10d": num(d.get("f160")),
+            })
+        total = num(data.get("total")) or 0
+        if not diff or page * page_size >= total:
+            break
+        page += 1
+        await asyncio.sleep(_EM_TOP_STOCKS_INTERVAL)
+    return items
+
+
+async def fetch_board_constituents(board_type: str, board_code: str) -> list[dict]:
+    """东财 push2 板块全部成分股（独立连接版，单板块调用）"""
+    async with httpx.AsyncClient(timeout=10, headers=_QQ_HEADERS) as client:
+        return await _fetch_board_constituents_paged(client, board_code)
+
+
+async def fetch_boards_constituents_batch(
+    boards: list[dict],
+) -> list[tuple[dict, list[dict]]]:
+    """批量抓取多板块全部成分股（共享连接与域名探测，单板块失败不影响整体）
+
+    boards 为 [{board_type, board_code, board_name, ...}]，返回与入参顺序一致的
+    [(board, stocks)]，失败板块的 stocks 为空列表。
+    board_code 非 BK 前缀（腾讯兜底源 pt0xxxxx 等）时按板块名解析东财代码。
+    """
+    sem = asyncio.Semaphore(_EM_TOP_STOCKS_CONCURRENCY)
+
+    async with httpx.AsyncClient(timeout=10, headers=_QQ_HEADERS) as client:
+        name_maps = {
+            bt: await _fetch_em_board_code_map(client, bt)
+            for bt in {str(b.get("board_type") or "industry") for b in boards}
+        }
+
+        async def _one(board: dict) -> list[dict]:
+            async with sem:
+                try:
+                    em_code = _resolve_em_board_code(
+                        board, name_maps.get(str(board.get("board_type") or "industry"), {}),
+                    )
+                    if not em_code:
+                        raise RuntimeError("按板块名未匹配到东财板块代码")
+                    return await _fetch_board_constituents_paged(client, em_code)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "板块成分股抓取失败(%s %s): %s",
+                        board["board_code"], board["board_name"], e,
+                    )
+                    return []
+                finally:
+                    await asyncio.sleep(_EM_TOP_STOCKS_INTERVAL)
+
+        stocks_list = await asyncio.gather(*(_one(b) for b in boards))
+    return list(zip(boards, stocks_list))
+
+
+async def fetch_boards_history_batch(
+    boards: list[dict], days: int = 60, concurrency: int = 2, interval: float = 0.5
+) -> list[tuple[dict, list[dict]]]:
+    """批量抓取多板块历史日K（共享连接，单板块失败不影响整体）
+
+    用于历史回填，并发与间隔比实时接口更保守（push2his 存在 IP 级限流
+    断连，过高的请求密度会触发整段封锁）。返回与入参顺序一致的
+    [(board, klines)]，失败板块的 klines 为空列表。
+    board_code 非 BK 前缀（腾讯兜底源 pt0xxxxx 等）时按板块名解析东财代码。
+    """
+    sem = asyncio.Semaphore(concurrency)
+
+    async with httpx.AsyncClient(timeout=10, headers=_QQ_HEADERS) as client:
+        name_maps = {
+            bt: await _fetch_em_board_code_map(client, bt)
+            for bt in {str(b.get("board_type") or "industry") for b in boards}
+        }
+
+        async def _one(board: dict) -> list[dict]:
+            async with sem:
+                try:
+                    em_code = _resolve_em_board_code(
+                        board, name_maps.get(str(board.get("board_type") or "industry"), {}),
+                    )
+                    if not em_code:
+                        raise RuntimeError("按板块名未匹配到东财板块代码")
+                    return await _fetch_board_kline_paged(client, em_code, days)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "板块历史日K抓取失败(%s %s): %s",
+                        board["board_code"], board["board_name"], e,
+                    )
+                    return []
+                finally:
+                    await asyncio.sleep(interval)
+
+        klines_list = await asyncio.gather(*(_one(b) for b in boards))
+    return list(zip(boards, klines_list))

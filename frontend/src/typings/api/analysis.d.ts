@@ -1,7 +1,7 @@
 declare namespace Api {
   namespace Analysis {
     /** 分析类型 */
-    export type AnalysisType = 'market' | 'sector' | 'news';
+    export type AnalysisType = 'market' | 'sector' | 'news' | 'rotation';
 
     /** 分析时段：close-收盘分析（16:05），morning-早盘分析（9:20），weekly-周度复盘（周日晚，仅资讯分析） */
     export type SessionType = 'close' | 'morning' | 'weekly';
@@ -55,6 +55,40 @@ declare namespace Api {
       key_points?: string[];
     }
 
+    /** 轮动分析近期板块项（parsed_result.recent_boards） */
+    export interface RotationBoardItem {
+      board_name?: string;
+      board_type?: string;
+      stage?: string;
+      change_pct?: number | null;
+      viewpoint?: string;
+    }
+
+    /** 轮动分析明日候选板块项（parsed_result.tomorrow_boards） */
+    export interface RotationTomorrowBoardItem {
+      board_name?: string;
+      board_type?: string;
+      action?: string;
+      confidence?: string;
+      viewpoint?: string;
+    }
+
+    /** 轮动分析切换信号项（parsed_result.switch_signals） */
+    export interface RotationSwitchSignalItem {
+      board_name?: string;
+      summary?: string;
+    }
+
+    /** 轮动策略分析结构化摘要（parsed_result） */
+    export interface RotationParsedResult {
+      rotation_summary?: string;
+      recent_boards?: RotationBoardItem[];
+      tomorrow_boards?: RotationTomorrowBoardItem[];
+      switch_signals?: RotationSwitchSignalItem[];
+      key_points?: string[];
+      tomorrow_outlook?: TomorrowOutlook;
+    }
+
     /** 分析策略配置（无记录时后端返回默认值，data 始终非空） */
     export interface AnalysisConfig {
       analysis_type: AnalysisType | string;
@@ -84,6 +118,7 @@ declare namespace Api {
         | MarketParsedResult
         | SectorParsedResult
         | NewsParsedResult
+        | RotationParsedResult
         | Record<string, unknown>
         | null;
       error_msg: string | null;

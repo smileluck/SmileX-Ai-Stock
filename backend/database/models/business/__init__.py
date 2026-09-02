@@ -9,6 +9,7 @@ from .stock_hot import BusinessStockHotRank, BusinessStockHotSyncLog
 from .stock_market import (
     BusinessMarketIndexDaily,
     BusinessBoardDaily,
+    BusinessBoardStockDaily,
     BusinessLimitUpStock,
     BusinessIndexConstituent,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "BusinessStockHotSyncLog",
     "BusinessMarketIndexDaily",
     "BusinessBoardDaily",
+    "BusinessBoardStockDaily",
     "BusinessLimitUpStock",
     "BusinessIndexConstituent",
     "BusinessBlockTradeDaily",

@@ -125,6 +125,9 @@ error:
     not_found: "商户不存在"
     code_exist: "商户编码已存在"
     app_id_conflict: "AppId冲突，请重试"
+  rotation:
+    sync_running: "板块成分股同步正在进行中"
+    backfill_running: "板块历史回填正在进行中"
 
 pydantic:
   int_parsing: "请输入有效的整数"

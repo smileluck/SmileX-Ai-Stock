@@ -17,7 +17,13 @@
 - 财报解读右侧抽屉展示本期评级 + 下期预测评级
 - 解读记录列表（`financial-analysis/index.vue` historyColumns）在「报告期」后新增「本期评级」「下期预测」两列：数据取列表接口已返回的 `parsed_result`（quality_rating / next_quality_rating / forecast.direction），纯前端改动；仅 status=success 时显示 Tag，否则占位「-」；下期预测列 = 下期预测评级 Tag + 方向 Tag（改善/持平/恶化）
 - 解读记录列表新增两个筛选下拉：本期评级（优秀/良好/一般/较差）+ 下期预测（改善/持平/恶化）。后端 `/admin/financial/interpretations` 加 `quality_rating` / `forecast_direction` query 参数（Annotated+BeforeValidator 枚举归一，非法值归 None 不过滤），JSON 列过滤用 `parsed_result['quality_rating'].as_string()` / `parsed_result['forecast']['direction'].as_string()`（json 列不支持 `?` 操作符）
-- 重要数据事实：截至 2026-09-01 全部 60 条解读记录 `next_quality_rating` 均为 NULL（模型省略该字段）——下期筛选因此按 forecast.direction 实现；已同步强化 SYSTEM prompt（JSON 必须包含全部 6 个字段），新解读记录才会产出下期预测评级
+- 重要数据事实：截至 2026-09-01 存量 60 条解读记录 `next_quality_rating` 均为 NULL（旧模型省略该字段）——下期筛选因此按 forecast.direction 实现；prompt 强化为「必须包含全部 6 个字段」后已实测生效（600519 新解读 parsed_result.next_quality_rating=良好）。注意该字段无独立列/接口字段，前端直接读 `parsed_result.next_quality_rating`
+
+### 后续增强（2026-09-01 第二批：列表元信息 + 来源分析 + 策略配置化，迁移 0029）
+
+- **股票名称/所属行业**：列表「股票」列改两行（名称 + 代码小字），新增「所属行业」列。根因修复：新浪财报接口「股票名称」列偶为空 → fetcher 加新浪行情兜底；`interpretation` 加 `industry` 列；创建解读时 `_resolve_stock_meta`（研报表最新非空 → 东财 push2 httpx 直连 f57/f58/f127，主源限流走 push2delay → 新浪名称最终兜底）；迁移 0029 对存量回填（60/60 覆盖，研报未覆盖 32 只由 push2 一次性脚本补齐）
+- **下期盈利增长预测来源分析（两者都要）**：① prompt forecast 加 `drivers: string[]`（2-4 条驱动因素），列表「下期预测」Tag hover NPopover + 顶部卡/抽屉展示；② 券商对照：列表/详情接口对本页 code 集合查 `business_research_report` 每股最新一条（order_by published_date desc nullslast），组装 `research_brief: {org_name, rating, published_date, forecast{年份:{eps,pe}}}` 附到行，popover 与抽屉展示（约半数个股有研报覆盖）
+- **分析策略配置化**：原硬编码 `_FINANCIAL_SYSTEM_PROMPT` 之上，新增单行配置表 `business_financial_config.prompt_template`（Text, ≤2000 字），`GET/PUT /admin/financial/config`（financial:list / financial:run），`_interpret` user prompt 尾部注入「分析策略要求（用户定制，生成时必须遵循）」；前端查询卡「分析策略」按钮（financial:run 可见）→ 抽屉 textarea 保存。端到端实测：策略「重点关注现金流与分红能力」成功注入（raw think 首句即提及，drivers 含分红相关条目）
 
 ## 涉及范围
 
@@ -50,7 +56,7 @@
 - `backend/modules/analysis/services/analysis_executor.py`（news prompt + 宏观注入）
 - `backend/modules/macro/`、`backend/modules/financial/`
 - `backend/modules/scheduler/tasks/analysis_run.py` / `macro_sync.py` / `financial_run.py`
-- `backend/alembic/versions/0026_macro_financial_news.py`
+- `backend/alembic/versions/0026_macro_financial_news.py`、`0029_financial_list_enhance.py`（industry 列 + 存量元信息回填 + business_financial_config 表）
 - `frontend/src/views/ai/news-analysis/`、`macro/`、`financial-analysis/`
 - `aiDoc/frontend-backend/boundary.md`（新增三段契约）
 

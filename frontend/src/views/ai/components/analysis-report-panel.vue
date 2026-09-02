@@ -291,6 +291,35 @@ const newsParsed = computed(() => {
   return current.value.parsed_result as Api.Analysis.NewsParsedResult;
 });
 
+const rotationParsed = computed(() => {
+  if (props.analysisType !== 'rotation' || !current.value?.parsed_result) return null;
+  return current.value.parsed_result as Api.Analysis.RotationParsedResult;
+});
+
+/** 轮动阶段标签配色：启动-蓝 / 发酵-橙 / 高潮-红 / 退潮-绿 / 蓄势-灰 */
+function stageTagType(stage?: string): 'info' | 'warning' | 'error' | 'success' | 'default' {
+  switch (stage) {
+    case 'start':
+      return 'info';
+    case 'ferment':
+      return 'warning';
+    case 'climax':
+      return 'error';
+    case 'ebb':
+      return 'success';
+    default:
+      return 'default';
+  }
+}
+
+/** 轮动操作建议标签配色：主攻-红 / 潜伏-橙 / 回避-绿 / 其他-灰 */
+function actionTagType(action?: string): 'error' | 'warning' | 'success' | 'default' {
+  if (action?.includes('主攻')) return 'error';
+  if (action?.includes('潜伏')) return 'warning';
+  if (action?.includes('回避')) return 'success';
+  return 'default';
+}
+
 /** 资讯分析不涉及研判章节开关 */
 const isNewsType = computed(() => props.analysisType === 'news');
 
@@ -498,6 +527,59 @@ onBeforeUnmount(stopPoll);
               </span>
             </NTag>
           </NSpace>
+        </NDescriptionsItem>
+      </NDescriptions>
+
+      <!-- 轮动策略分析：轮动总结 + 近期板块 + 明日候选 + 切换信号 -->
+      <NDescriptions
+        v-if="rotationParsed"
+        label-placement="left"
+        :column="1"
+        size="small"
+        bordered
+        class="mb-12px"
+      >
+        <NDescriptionsItem :label="$t('page.aiAnalysis.rotationLabel')">
+          {{ rotationParsed.rotation_summary ?? '-' }}
+        </NDescriptionsItem>
+        <NDescriptionsItem v-if="rotationParsed.recent_boards?.length" :label="$t('page.aiAnalysis.rotation.recentBoardsLabel')">
+          <NSpace :size="6" wrap>
+            <NTag
+              v-for="(board, idx) in rotationParsed.recent_boards"
+              :key="idx"
+              size="small"
+              :bordered="false"
+              :type="stageTagType(board.stage)"
+            >
+              {{ board.board_name }}
+              <span v-if="board.change_pct !== null && board.change_pct !== undefined" :style="{ color: pctColor(board.change_pct) }">
+                {{ board.change_pct! > 0 ? '+' : '' }}{{ board.change_pct!.toFixed(2) }}%
+              </span>
+            </NTag>
+          </NSpace>
+        </NDescriptionsItem>
+        <NDescriptionsItem v-if="rotationParsed.tomorrow_boards?.length" :label="$t('page.aiAnalysis.rotation.tomorrowBoardsLabel')">
+          <NSpace :size="6" wrap>
+            <NTag
+              v-for="(board, idx) in rotationParsed.tomorrow_boards"
+              :key="idx"
+              size="small"
+              :bordered="false"
+              :type="actionTagType(board.action)"
+            >
+              {{ board.board_name }}
+              <span v-if="board.action">{{ board.action }}</span>
+              <span v-if="board.confidence" class="text-11px opacity-70">{{ board.confidence }}</span>
+            </NTag>
+          </NSpace>
+        </NDescriptionsItem>
+        <NDescriptionsItem v-if="rotationParsed.switch_signals?.length" :label="$t('page.aiAnalysis.rotation.switchSignalsLabel')">
+          <div class="flex flex-col gap-2px">
+            <NText v-for="(sig, idx) in rotationParsed.switch_signals" :key="idx" class="text-12px">
+              <span class="font-500">{{ sig.board_name }}</span>
+              <span class="ml-6px">{{ sig.summary }}</span>
+            </NText>
+          </div>
         </NDescriptionsItem>
       </NDescriptions>
 

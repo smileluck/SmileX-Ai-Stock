@@ -64,13 +64,16 @@ async def _generate_for_types(session: str, analysis_types: tuple = ("market", "
 @scheduled_task(
     cron="5,25 16 * * mon-fri",
     name="AI大盘板块收盘分析生成",
-    description="收盘后行情数据同步完成时，自动生成当日大盘点评与板块轮动解读（结合近期资讯；16:25 为失败补跑点，同日同类型已有成功记录则跳过）",
+    description="收盘后行情数据同步完成时，自动生成当日大盘点评、板块轮动解读与轮动策略分析（结合近期资讯与成分股快照；16:25 为失败补跑点，同日同类型已有成功记录则跳过）",
     task_key="analysis.auto_generate",
     is_system=True,
 )
 async def analysis_auto_generate():
-    """生成 market/sector 收盘分析（16:05）"""
-    return await _generate_for_types("close")
+    """生成 market/sector/rotation 收盘分析（16:05）"""
+    # rotation 仅 close 时段（轮动规律需完整收盘数据）；成分股快照 15:38 已同步
+    return await _generate_for_types(
+        "close", analysis_types=("market", "sector", "rotation"),
+    )
 
 
 @scheduled_task(

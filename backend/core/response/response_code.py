@@ -148,6 +148,9 @@ class CustomErrorCode(CustomCodeBase):
     ANALYSIS_TYPE_INVALID = (11601, "error.analysis.type_invalid")
     ANALYSIS_RUN_NOT_FOUND = (11602, "error.analysis.run_not_found")
     ANALYSIS_ALREADY_RUNNING = (11603, "error.analysis.already_running")
+    # 板块轮动分析 11604-11620（analysis 段内）
+    ROTATION_SYNC_RUNNING = (11604, "error.rotation.sync_running")
+    ROTATION_BACKFILL_RUNNING = (11605, "error.rotation.backfill_running")
     # 宏观指数 11621-11640
     MACRO_INDICATOR_INVALID = (11621, "error.macro.indicator_invalid")
     # 企业财报 AI 解读 11641-11660

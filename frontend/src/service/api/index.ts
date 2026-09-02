@@ -12,6 +12,7 @@ export * from './stock-hot';
 export * from './stock-market';
 export * from './stock-board';
 export * from './stock-limit-up';
+export * from './stock-rotation';
 export * from './block-trade';
 export * from './strategy';
 export * from './analysis';

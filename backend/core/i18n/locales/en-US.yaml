@@ -118,6 +118,9 @@ error:
     not_found: "Merchant not found"
     code_exist: "Merchant code already exists"
     app_id_conflict: "AppId conflict, please retry"
+  rotation:
+    sync_running: "Board stock snapshot sync already running"
+    backfill_running: "Board history backfill already running"
 
 pydantic:
   int_parsing: "Please enter a valid integer"

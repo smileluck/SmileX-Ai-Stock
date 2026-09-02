@@ -78,6 +78,7 @@ async def lifespan(app: FastAPI):
     import modules.scheduler.tasks.macro_sync  # noqa: F401
     import modules.scheduler.tasks.financial_run  # noqa: F401
     import modules.scheduler.tasks.research_sync  # noqa: F401
+    import modules.scheduler.tasks.rotation_sync  # noqa: F401
 
     manager = SchedulerManager.get_instance()
     manager.start()

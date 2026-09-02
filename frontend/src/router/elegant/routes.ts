@@ -189,6 +189,15 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'ai_rotation-analysis',
+        path: '/ai/rotation-analysis',
+        component: 'view.ai_rotation-analysis',
+        meta: {
+          title: 'ai_rotation-analysis',
+          i18nKey: 'route.ai_rotation-analysis'
+        }
+      },
+      {
         name: 'ai_sector-analysis',
         path: '/ai/sector-analysis',
         component: 'view.ai_sector-analysis',

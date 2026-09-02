@@ -158,6 +158,74 @@ _SECTOR_TOMORROW_SECTION = """
 """
 
 # ------------------------------------------------------------------
+# 轮动策略分析（rotation，仅 close）：跨日轮动规律 + 阶段定位 + 明日埋伏推演 +
+# 板块内高低切换。与 sector 的分工：sector=当日盘面点评，rotation=跨日规律与明日推演
+# ------------------------------------------------------------------
+_ROTATION_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 轮动策略分析师，负责对A股板块轮动规律进行跨日推演，辅助提前埋伏与趋势跟随。
+
+我会直接提供规则引擎计算的轮动指标（板块阶段/明日候选评分/操作建议/高低切换信号）、涨停情绪统计与近期资讯，禁止凭空编造数据，分析必须基于所给数据。只推演到板块层面，不点名个股、不给出具体买卖价位。
+
+字段口径：stage-轮动阶段（start-低位启动/ferment-发酵/climax-高潮/ebb-退潮/observe-蓄势观察）；action-规则建议（attack-主攻/ambush-潜伏埋伏/avoid-回避/watch-观察）；signal-切换信号（switching-高低切换/split-分歧/resonance-共振/unknown-数据不足）；tomorrow_score-明日候选评分 0-100。
+
+输出要求（严格按以下顺序，两部分缺一不可）：
+1. 先输出一个 JSON 对象（包在 ```json 代码块中）：
+```json
+{
+  "rotation_summary": "一句话轮动总结",     // 30 字以内
+  "recent_boards": [                     // 近期轮动最值得复盘的 3-5 个板块
+    {
+      "board_name": "半导体",
+      "board_type": "industry",
+      "stage": "ferment",               // start/ferment/climax/ebb/observe
+      "change_pct": 3.21,
+      "viewpoint": "轮动定位与后续观察点，40 字以内"
+    }
+  ],
+  "tomorrow_boards": [                   // 明日轮动推演候选 3-5 个（主攻/潜伏两档为主，可含回避）
+    {
+      "board_name": "消费电子",
+      "board_type": "industry",
+      "action": "主攻",                 // 主攻 / 潜伏 / 回避
+      "confidence": "中",               // 高 / 中 / 低
+      "viewpoint": "推荐逻辑与确认信号，40 字以内"
+    }
+  ],
+  "switch_signals": [                    // 板块内高低切换信号（无信号则为空数组）
+    {
+      "board_name": "光伏设备",
+      "summary": "高位滞涨、低位补涨的判断，40 字以内"
+    }
+  ],
+  "key_points": ["要点1", "要点2"],       // 3-5 条核心观察
+  "tomorrow_outlook": {                  // 明日研判（未开启明日研判时省略该字段）
+    "direction": "轮动延续",              // 轮动延续 / 高低切换 / 热点退潮 / 新主线酝酿
+    "summary": "一句话研判（40字内），须包含核心依据与一个可验证的确认信号"
+  }
+}
+```
+2. 再输出完整的 markdown 分析报告，结构建议：
+   ## 近期轮动复盘（主线演化路径：哪些板块接力/退潮，与规则指标印证）
+   ## 资金与涨停梯队（净流入连续性与连板高度对轮动阶段的验证）
+   ## 板块内高低切换（规则信号解读：高位滞涨与低位启动的资金含义）
+   ## 明日轮动推演（主攻/潜伏两档候选板块 + 每档的竞价确认信号）
+   ## 风险提示（主线退潮/切换失败/消息面证伪的观测点）
+
+报告使用中文，条理清晰，总长度控制在 800 字以内。不构成投资建议的免责声明无需输出。
+"""
+
+_ROTATION_TOMORROW_SECTION = """
+## 明日轮动推演（必须包含，按专业研判框架输出）
+1. **候选板块梯队**：给出「主攻」与「潜伏埋伏」两档候选板块（可引用规则引擎的 tomorrow_score 与 action，但须给出独立判断），每档 2-3 个板块并写明：
+   - 推荐逻辑：位置高低（近10日涨幅位置）、资金连续性、涨停梯队支撑
+   - 触发条件：明日竞价即可观察的确认信号（板块高开幅度、龙头竞价溢价、量能水平）
+   - 概率倾向：该板块如期走强的主观概率
+2. **产业链联动推演**：若上游/主链板块已启动，推演中下游低位补涨方向（如算力涨→液冷/铜连接，锂矿涨→电池/整车），写明联动传导的观察信号
+3. **回避清单**：明确列出明日应回避的高位退潮方向及判定依据
+4. **作废条件**：明确写出 1-2 个使本推演失效的可观察信号（如候选板块竞价集体低开、两市涨停家数骤减）
+禁止"建议关注"式空话；结论必须能被明日盘面证实或证伪。
+"""
+
+# ------------------------------------------------------------------
 # 早盘分析（9:20，morning）系统提示词：数据 = 昨日收盘快照 + 近24小时资讯，
 # 侧重隔夜消息面对今日开盘的影响与今日观察要点
 # ------------------------------------------------------------------
@@ -344,6 +412,9 @@ def _build_system_prompt(analysis_type: str, session: str, include_tomorrow: boo
             prompt, section = _MARKET_MORNING_SYSTEM_PROMPT, _MARKET_MORNING_SECTION
         else:
             prompt, section = _MARKET_SYSTEM_PROMPT, _MARKET_TOMORROW_SECTION
+    elif analysis_type == "rotation":
+        # 轮动策略分析仅 close 时段（VALID_TYPE_SESSIONS 约束），无 morning 变体
+        prompt, section = _ROTATION_SYSTEM_PROMPT, _ROTATION_TOMORROW_SECTION
     else:
         if session == "morning":
             prompt, section = _SECTOR_MORNING_SYSTEM_PROMPT, _SECTOR_MORNING_SECTION
@@ -641,6 +712,89 @@ async def _collect_sector_data(db: AsyncSession) -> str:
     return "\n\n".join(parts)
 
 
+async def _collect_rotation_data(db: AsyncSession) -> str:
+    """轮动策略分析数据收集：行业+概念轮动总览（阶段/评分/建议）+ 高低切换信号 + 涨停情绪"""
+    from modules.stock.services.rotation_service import RotationService
+    from modules.stock.services.limit_up_service import LimitUpService
+
+    overview_fields = [
+        "board_name", "board_type", "stage", "action", "tomorrow_score",
+        "change_pct", "gain_3d", "gain_5d", "gain_10d",
+        "rank", "rank_change", "volume_ratio",
+        "inflow_days", "limit_up_count", "max_consecutive",
+    ]
+    parts = [f"当前时间：{timezone.now().strftime('%Y-%m-%d %H:%M')}"]
+
+    overviews: dict[str, dict] = {}
+    for board_type, label in (("industry", "行业"), ("concept", "概念")):
+        try:
+            ov = await RotationService.get_overview(db, board_type=board_type, days=10)
+        except Exception:
+            logger.warning("轮动总览获取失败(%s，不影响分析)", board_type, exc_info=True)
+            ov = {"snapshot_date": None, "history_days": 0, "items": []}
+        overviews[board_type] = ov
+        items = (ov or {}).get("items") or []
+        if items:
+            snapshot_date = (ov or {}).get("snapshot_date")
+            history_days = (ov or {}).get("history_days")
+            parts.append(
+                f"{label}板块轮动总览（快照日 {snapshot_date}，历史 {history_days} 个交易日，"
+                f"按明日候选评分降序前 {_SECTOR_TOP_N}）：\n"
+                + json.dumps(items[:_SECTOR_TOP_N], ensure_ascii=False)
+            )
+        else:
+            parts.append(
+                f"{label}板块轮动总览：暂无数据（可能尚未同步或历史不足，"
+                "请基于其他数据分析并在报告中注明）"
+            )
+
+    # 高低切换信号（板块内部高位滞涨/低位启动的结构变化）
+    for board_type, label in (("industry", "行业"), ("concept", "概念")):
+        try:
+            sw = await RotationService.get_switch_signals(db, board_type=board_type)
+        except Exception:
+            logger.warning("高低切换信号获取失败(%s，不影响分析)", board_type, exc_info=True)
+            continue
+        items = (sw or {}).get("items") or []
+        # 只保留有意义信号（unknown 为数据不足噪音）
+        meaningful = [
+            it for it in items if it.get("signal") and it["signal"] != "unknown"
+        ]
+        if meaningful:
+            slim = [
+                {
+                    k: it.get(k)
+                    for k in ("board_name", "change_pct", "signal",
+                              "high_avg_pct", "low_avg_pct")
+                }
+                for it in meaningful[:10]
+            ]
+            parts.append(
+                f"{label}板块内高低切换信号（当日涨幅榜前列，signal-信号，"
+                f"high/low_avg_pct-高位/低位组今日均涨幅%）：\n"
+                + json.dumps(slim, ensure_ascii=False)
+            )
+
+    # 涨停情绪（连板高度是轮动阶段的核心验证）
+    try:
+        limit_stats = await LimitUpService.get_stats(db)
+        stats_raw = limit_stats.model_dump(mode="json")
+        stats_fields = {
+            k: stats_raw.get(k)
+            for k in ("record_date", "total_count", "main_count", "chinext_count",
+                      "star_count", "max_consecutive", "board_distribution")
+            if stats_raw.get(k) not in (None, {}, 0)
+        }
+        if stats_fields:
+            parts.append(f"最新涨停情绪统计：\n{json.dumps(stats_fields, ensure_ascii=False)}")
+    except Exception:
+        logger.warning("涨停情绪统计获取失败（不影响分析）", exc_info=True)
+
+    # 资讯段由 _analyze 单独注入（LLM 内容审核失败时可整体摘除降级重试）
+    parts.append("请基于以上真实数据输出 JSON 摘要与 markdown 轮动策略分析报告。")
+    return "\n\n".join(parts)
+
+
 async def _run_llm(
     db: AsyncSession,
     analysis_type: str,
@@ -789,6 +943,8 @@ class AnalysisExecutor:
             data_prompt = await _collect_news_analysis_data(db, session)
         elif analysis_type == "market":
             data_prompt = await _collect_market_data(db)
+        elif analysis_type == "rotation":
+            data_prompt = await _collect_rotation_data(db)
         else:
             data_prompt = await _collect_sector_data(db)
 

@@ -6,6 +6,7 @@ A股行情快照表
 - 大盘指数日快照
 - 大盘资金流日快照
 - 行业/概念板块日快照
+- 板块成分股日快照
 - 涨停股池日快照
 - 指数成分股快照（BaoStock）
 """
@@ -164,6 +165,58 @@ class BusinessBoardDaily(Base):
     leading_stocks: Mapped[Optional[list]] = mapped_column(
         JSON, nullable=True, default=None,
         comment="领涨股前三名 [{code, name, change_pct}]，抓取层按板块内涨幅排序",
+    )
+
+
+class BusinessBoardStockDaily(Base):
+    """板块成分股日快照表（轮动分析-板块内高低切换数据源）
+
+    每日收盘后对活跃板块（行业全量 + 概念涨幅前 N）抓取板块内全部成分股快照，
+    用于计算板块内部高位/低位股分层与高低切换信号。
+    """
+
+    __table_args__ = (
+        UniqueConstraint(
+            "record_date",
+            "board_type",
+            "board_code",
+            "stock_code",
+            name="uk_board_stock_daily_date_board_code",
+        ),
+        {"comment": "板块成分股日快照表"},
+    )
+
+    record_date: Mapped[date] = mapped_column(
+        Date, nullable=False, index=True, comment="快照日期（本地时区）"
+    )
+    board_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="板块类型: industry/concept"
+    )
+    board_code: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="板块代码"
+    )
+    board_name: Mapped[str] = mapped_column(String(100), nullable=False, comment="板块名称")
+    stock_code: Mapped[str] = mapped_column(
+        String(20), nullable=False, index=True, comment="股票代码"
+    )
+    stock_name: Mapped[str] = mapped_column(String(50), nullable=False, comment="股票名称")
+    price: Mapped[Optional[float]] = mapped_column(
+        Numeric(16, 4), nullable=True, comment="最新价", default=None
+    )
+    change_pct: Mapped[Optional[float]] = mapped_column(
+        Numeric(8, 4), nullable=True, comment="当日涨跌幅(%)", default=None
+    )
+    amount: Mapped[Optional[float]] = mapped_column(
+        Numeric(20, 2), nullable=True, comment="成交额(元)", default=None
+    )
+    turnover_rate: Mapped[Optional[float]] = mapped_column(
+        Numeric(8, 4), nullable=True, comment="换手率(%)", default=None
+    )
+    gain_5d: Mapped[Optional[float]] = mapped_column(
+        Numeric(8, 4), nullable=True, comment="近5日涨跌幅(%)（数据源直接提供；无则读时按快照自累计）", default=None
+    )
+    gain_10d: Mapped[Optional[float]] = mapped_column(
+        Numeric(8, 4), nullable=True, comment="近10日涨跌幅(%)（数据源直接提供；无则读时按快照自累计）", default=None
     )
 
 

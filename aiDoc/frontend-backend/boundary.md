@@ -357,8 +357,9 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 ### 企业财报解读（financial 新模块）
 
 - 前缀 `/admin/financial`；权限码 `financial:list`（查询）、`financial:run`（触发解读）；错误码 11641-11644（report_not_found / report_fetch_failed / interpret_not_found / already_running）
-- 接口：`GET /financial/reports/{stock_code}?limit`（库内财报指标，report_period 倒序）、`POST /financial/interpretations/{stock_code}`（异步提交解读：库内无财报自动补抓，返回 `{interpretation_id, status: "running"}`，同股票并发守卫 11644）、`GET /financial/interpretations?page&page_size&stock_code`（分页记录）、`GET /financial/interpretations/detail/{id}`（详情含报告原文）
-- `parsed_result` 为 `{quality_rating, highlights[], risks[], forecast: {direction, summary}}`；`status` 三态 `running/success/failed`；`trigger_type`: `schedule`（持仓自动）/`manual`
+- 接口：`GET /financial/reports/{stock_code}?limit`（库内财报指标，report_period 倒序）、`POST /financial/interpretations/{stock_code}`（异步提交解读：库内无财报自动补抓，返回 `{interpretation_id, status: "running"}`，同股票并发守卫 11644）、`GET /financial/interpretations?page&page_size&stock_code&quality_rating&forecast_direction`（分页记录）、`GET /financial/interpretations/detail/{id}`（详情含报告原文）、`GET/PUT /financial/config`（分析策略 prompt_template ≤2000 字，权限 financial:list / financial:run，0029）
+- `parsed_result` 为 `{quality_rating, next_quality_rating, highlights[], risks[], forecast: {direction, summary, drivers[]}}`（drivers=下期盈利预测驱动因素 2-4 条，0029 起 prompt 强制产出）；`status` 三态 `running/success/failed`；`trigger_type`: `schedule`（持仓自动）/`manual`
+- 列表/详情行附 `industry`（所属行业）与 `research_brief: {org_name, rating, published_date, forecast{年份:{eps,pe}}}`（该股最新券商研报摘要，每股取 published_date 最新一条，无研报时为 null；0029）
 - 新表 `business_financial_report`（`stock_code+report_period` 唯一）与 `business_financial_interpretation`；数据源 akshare `stock_financial_analysis_indicator`（新浪财务指标，白名单列名容错匹配）
 - 定时任务 `financial.auto_interpret`（cron `0 8 * * mon-fri`）：持仓 + 近30天策略信号标的，补抓财报后对最新报告期无成功解读的个股自动提交解读（同报告期去重）
 - 菜单 `ai_financial-analysis`（财报分析）；前端 `views/ai/financial-analysis/index.vue`（代码查询 + 解读报告 + 指标表 + 历史列表）
@@ -380,3 +381,19 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 因子 `type` 枚举：`consecutive`（连板高度）/`seal_ratio`（封成比=封单÷成交额）/`break_count`（炸板次数）/`first_seal`（首封时间，原始字符串 `HHMMSS`）/`turnover_rate`（换手率%）；`value` 缺失为 null，前端按 i18n 模板渲染（`page.aStock.limitUp.factor*`）
 - 前端：`views/a-stock/industry-board`（领涨股列前三 + flex-height 滚动修复）、`views/a-stock/limit-up`（连板概率列 NTag 高≥65/中40-65/低<40 + NTooltip 因子明细）
 - **研报统计（按股票分组）**：`GET /research/reports/stock-stats?days=1..365&stock_code`（研报数/看多评级数(买入/增持/推荐/强烈推荐/优于大市)/机构数/最新研报日期，研报数倒序）；前端研报中心页含快捷时间窗（7天/1月/3月/半年/1年 → days=7/30/90/180/365），表格列可排序，行内「查看研报」联动下方列表筛选
+
+### 板块轮动策略分析（2026-09-01，迁移 0030）
+
+- 前缀 `/admin/stock/rotation`；权限码复用 `stock:board:list`（查询）、`stock:board:sync`（同步/回填）；错误码 11604（成分股同步进行中）/ 11605（历史回填进行中）
+- 接口：
+  - `GET /rotation/overview?board_type=industry|concept&days=5..60`（默认 10）→ `{snapshot_date, history_days, items: RotationOverviewItem[]}`（按明日评分降序）
+  - `GET /rotation/switch?board_type&top_n=5..30`（默认 15）→ `{snapshot_date(成分股快照日), items: RotationSwitchItem[]}`（当日涨幅榜前 N 板块）
+  - `POST /rotation/sync_stocks?concept_top=5..100`（默认 30）→ `{boards, saved_boards, stocks, failed_boards, snapshot_date}`
+  - `POST /rotation/backfill?board_type=industry|concept|all&days=10..250`（默认 all/60）→ `{board_type, days, boards, status: submitted|no_data}`（后台执行立即返回；all=行业+概念合并单任务）
+- `RotationOverviewItem` 枚举字段（读时计算不入库，全部因子 None 容错）：`stage: start|ferment|climax|ebb|observe`（启动/发酵/高潮/退潮/蓄势）、`action: attack|ambush|avoid|watch`（主攻/潜伏/回避/观察）、`tomorrow_score: 0-100`；数值字段 `change_pct/gain_3d/gain_5d/gain_10d/rank/rank_change/volume_ratio/inflow_days/limit_up_count/max_consecutive` 均可 null
+- `RotationSwitchItem`：`signal: switching|split|resonance|unknown`（高低切换/分歧/共振/数据不足）、`position_key: gain_10d|gain_5d|change_pct`（分层键按覆盖率降级）、`high_avg_pct/low_avg_pct`、`high_laggards[]/low_starters[]`（高位滞涨/低位启动各 ≤5 只：`{stock_code, stock_name, price, change_pct, amount, position_gain}`）
+- 新表 `business_board_stock_daily`（板块成分股日快照，唯一键 record_date+board_type+board_code+stock_code）；`business_board_daily` 通过 push2his 板块日K回填历史缺失日期（on_conflict 只补缺，跳过当日半日 bar，回填行净流入/涨跌家数为 null）
+- **board_code 跨源注意**：板块代码跟随当日列表源（东财 BKxxxx / 腾讯兜底 pt0xxxxx），成分股与日K抓取按板块名解析东财代码（归一化+去 Ⅱ 后缀兜底），QQ 独有板块解析失败计 failed_boards
+- 定时任务 `stock.rotation_stock_sync`（cron `38 15 * * mon-fri`，板块同步 15:31 之后写当日成分快照）
+- analysis 模块新增 `rotation` 类型（仅 close 时段）：`parsed_result` 为 `{rotation_summary, recent_boards[3-5]{board_name,board_type,stage,change_pct,viewpoint}, tomorrow_boards[3-5]{board_name,board_type,action(主攻/潜伏/回避),confidence(高/中/低),viewpoint}, switch_signals[{board_name,summary}], key_points[], tomorrow_outlook{direction:轮动延续|高低切换|热点退潮|新主线酝酿, summary}}`；收盘自动生成扩展为 market/sector/rotation；AI 只推演板块层，个股名单由切换表数据侧给出
+- 菜单 `ai_rotation-analysis`（ID 8032，sort=10，AI 目录下）；前端 `views/ai/rotation-analysis/index.vue`（左侧行业/概念 RadioGroup + 三页签表格，右侧 `analysis-report-panel.vue` rotation session=close）；回填按钮单次调 `board_type=all`
