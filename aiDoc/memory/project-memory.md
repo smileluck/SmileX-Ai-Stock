@@ -10,6 +10,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-09-03 轮动策略分析：补齐 AI 分析策略配置](./business/2026-09-03_rotation_analysis_strategy_config.md) — rotation 在 business_analysis_config 无记录（market/sector 均有）致策略抽屉空白；以买方轮动策略分析师视角写主策略（主题-阶段-位置三维+7 条纪律：规则输出只作输入禁照抄/集结信号三要素/位置定打法/涨停验证阶段/切换结构/消息印证/表述规范）+明日推演框架（主攻潜伏双档+产业链联动+概率+回避清单+作废条件），SQL 直接入库即生效（配置读时取，无需重启）
 - [2026-09-03 分析报告排版优化（共享面板+财报页）](./business/2026-09-03_analysis_report_layout_optimize.md) — 纯视觉重构：4 共享组件（analysis-markdown/status-view/section 竖条标题/summary-card）+ utils `renderAnalysisMarkdown` 去 3 份重复；报告改摘要卡+区块标题+研判主色条、策略抽屉分组+show-count；财报页同套接入；坑：重写丢「轮动总结/总评」label 靠视觉走查补回、app.d.ts 0024 批 14 键漏同步致 typecheck 基线虚高（39→24）
 - [2026-09-02 轮动策略优化：主题级聚合+评分重写（军工轮动漏判修复）](./business/2026-09-02_rotation_strategy_optimize.md) — 单板块独立评分看不见主题级资金集结 → THEME_GROUPS 18 主题关键词互斥映射，行业+概念合并聚合 heat/status（gathering 集结升温=埋伏首选）；评分改 rank_pct 分位数 + gathering 成员加分/hot 中高位减分 + 双噪音抑制；overview 契约加 themes[] 与 theme/position_pct，AI prompt 加 theme_heat；坑：算法读时算但服务须重启才生效
 - [2026-09-01 板块轮动策略分析（近期轮动/明日候选/高低切换）](./business/2026-09-01_rotation_strategy_analysis.md) — 新页 rotation-analysis（菜单8032）双轨制：规则指标（阶段/评分/操作建议/高低切换信号，读时算不入库）+ AI rotation 报告类型（仅 close，板块层推演不点名个股）；新表 business_board_stock_daily（迁移0030）+ push2his 板块日K回填（board_type=all 合并单任务单锁）；坑：board_code 跨源（东财BK/腾讯pt0）须按板块名解析东财代码、push2/push2his IP 级限流须每请求逐域名降级重试、回填跳过当日半日 bar、elegant-router transform.ts routeMap 易漏
