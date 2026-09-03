@@ -1786,6 +1786,15 @@ declare namespace App {
           recentBoardsLabel: string;
           tomorrowBoardsLabel: string;
           switchSignalsLabel: string;
+          themeHeatTitle: string;
+          themeCol: string;
+          positionCol: string;
+          themeStatus_gathering: string;
+          themeStatus_active: string;
+          themeStatus_hot: string;
+          themeStatus_cooling: string;
+          themeStatus_flat: string;
+          themeHeatLabel: string;
         };
       };
       };

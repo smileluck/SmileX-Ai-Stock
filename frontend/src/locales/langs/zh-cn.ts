@@ -1612,7 +1612,16 @@ const local: App.I18n.Schema = {
         signal_unknown: '数据不足',
         recentBoardsLabel: '近期轮动',
         tomorrowBoardsLabel: '明日候选',
-        switchSignalsLabel: '切换信号'
+        switchSignalsLabel: '切换信号',
+        themeHeatTitle: '主题热度',
+        themeCol: '主题',
+        positionCol: '位置',
+        themeStatus_gathering: '集结升温',
+        themeStatus_active: '发酵走强',
+        themeStatus_hot: '高位过热',
+        themeStatus_cooling: '退潮',
+        themeStatus_flat: '平静',
+        themeHeatLabel: '主题热度'
       }
     },
     macro: {

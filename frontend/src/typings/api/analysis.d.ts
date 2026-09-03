@@ -79,10 +79,19 @@ declare namespace Api {
       summary?: string;
     }
 
+    /** 轮动分析主题热度项（parsed_result.theme_heat） */
+    export interface RotationThemeHeatItem {
+      theme?: string;
+      status?: string;
+      heat?: number | null;
+      viewpoint?: string;
+    }
+
     /** 轮动策略分析结构化摘要（parsed_result） */
     export interface RotationParsedResult {
       rotation_summary?: string;
       recent_boards?: RotationBoardItem[];
+      theme_heat?: RotationThemeHeatItem[];
       tomorrow_boards?: RotationTomorrowBoardItem[];
       switch_signals?: RotationSwitchSignalItem[];
       key_points?: string[];

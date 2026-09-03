@@ -1615,7 +1615,16 @@ const local: App.I18n.Schema = {
         signal_unknown: 'Insufficient',
         recentBoardsLabel: 'Recent Rotation',
         tomorrowBoardsLabel: 'Tomorrow Picks',
-        switchSignalsLabel: 'Switch Signals'
+        switchSignalsLabel: 'Switch Signals',
+        themeHeatTitle: 'Theme Heat',
+        themeCol: 'Theme',
+        positionCol: 'Position',
+        themeStatus_gathering: 'Gathering',
+        themeStatus_active: 'Active',
+        themeStatus_hot: 'Overheated',
+        themeStatus_cooling: 'Cooling',
+        themeStatus_flat: 'Flat',
+        themeHeatLabel: 'Theme Heat'
       }
     },
     macro: {

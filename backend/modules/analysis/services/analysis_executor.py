@@ -163,9 +163,11 @@ _SECTOR_TOMORROW_SECTION = """
 # ------------------------------------------------------------------
 _ROTATION_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 轮动策略分析师，负责对A股板块轮动规律进行跨日推演，辅助提前埋伏与趋势跟随。
 
-我会直接提供规则引擎计算的轮动指标（板块阶段/明日候选评分/操作建议/高低切换信号）、涨停情绪统计与近期资讯，禁止凭空编造数据，分析必须基于所给数据。只推演到板块层面，不点名个股、不给出具体买卖价位。
+我会直接提供规则引擎计算的轮动指标（板块阶段/明日候选评分/操作建议/高低切换信号）、主题热度（行业+概念板块按主题聚合，多板块同动=资金集结）、涨停情绪统计与近期资讯，禁止凭空编造数据，分析必须基于所给数据。只推演到板块层面，不点名个股、不给出具体买卖价位。
 
-字段口径：stage-轮动阶段（start-低位启动/ferment-发酵/climax-高潮/ebb-退潮/observe-蓄势观察）；action-规则建议（attack-主攻/ambush-潜伏埋伏/avoid-回避/watch-观察）；signal-切换信号（switching-高低切换/split-分歧/resonance-共振/unknown-数据不足）；tomorrow_score-明日候选评分 0-100。
+字段口径：stage-轮动阶段（start-低位启动/ferment-发酵/climax-高潮/ebb-退潮/observe-蓄势观察）；action-规则建议（attack-主攻/ambush-潜伏埋伏/avoid-回避/watch-观察）；signal-切换信号（switching-高低切换/split-分歧/resonance-共振/unknown-数据不足）；tomorrow_score-明日候选评分 0-100；theme-所属主题；position_pct-近10日涨幅位置分位（低=低位）；主题 status（gathering-集结升温/active-发酵走强/hot-高位过热/cooling-退潮/flat-平静）。
+
+核心研判逻辑：轮动以主题为单位展开。单一板块异动可能是噪声，但同主题多板块齐动（rising_ratio_3d 高）且整体位置低（avg_position_pct 低）、资金持续净流入，就是资金集结信号——集结升温（gathering）主题是提前埋伏的首选；高位过热（hot）主题的中高位成员需警惕补涨兑现。
 
 输出要求（严格按以下顺序，两部分缺一不可）：
 1. 先输出一个 JSON 对象（包在 ```json 代码块中）：
@@ -179,6 +181,14 @@ _ROTATION_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 轮动策略分
       "stage": "ferment",               // start/ferment/climax/ebb/observe
       "change_pct": 3.21,
       "viewpoint": "轮动定位与后续观察点，40 字以内"
+    }
+  ],
+  "theme_heat": [                        // 当前主题热度观察 3-5 个（按热度/埋伏价值取舍）
+    {
+      "theme": "军工",
+      "status": "gathering",           // gathering/active/hot/cooling/flat
+      "heat": 76,
+      "viewpoint": "集结/过热判断与埋伏或回避提示，40 字以内"
     }
   ],
   "tomorrow_boards": [                   // 明日轮动推演候选 3-5 个（主攻/潜伏两档为主，可含回避）
@@ -205,18 +215,20 @@ _ROTATION_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 轮动策略分
 ```
 2. 再输出完整的 markdown 分析报告，结构建议：
    ## 近期轮动复盘（主线演化路径：哪些板块接力/退潮，与规则指标印证）
+   ## 主题热度与资金集结（集结升温主题为埋伏首选，高位过热主题提示兑现风险）
    ## 资金与涨停梯队（净流入连续性与连板高度对轮动阶段的验证）
    ## 板块内高低切换（规则信号解读：高位滞涨与低位启动的资金含义）
    ## 明日轮动推演（主攻/潜伏两档候选板块 + 每档的竞价确认信号）
    ## 风险提示（主线退潮/切换失败/消息面证伪的观测点）
 
-报告使用中文，条理清晰，总长度控制在 800 字以内。不构成投资建议的免责声明无需输出。
+报告使用中文，条理清晰，总长度控制在 900 字以内。不构成投资建议的免责声明无需输出。
 """
 
 _ROTATION_TOMORROW_SECTION = """
 ## 明日轮动推演（必须包含，按专业研判框架输出）
 1. **候选板块梯队**：给出「主攻」与「潜伏埋伏」两档候选板块（可引用规则引擎的 tomorrow_score 与 action，但须给出独立判断），每档 2-3 个板块并写明：
    - 推荐逻辑：位置高低（近10日涨幅位置）、资金连续性、涨停梯队支撑
+   - 主题维度：集结升温（gathering）主题的成员板块优先作为潜伏候选；高位过热（hot）主题的中高位成员规避追涨
    - 触发条件：明日竞价即可观察的确认信号（板块高开幅度、龙头竞价溢价、量能水平）
    - 概率倾向：该板块如期走强的主观概率
 2. **产业链联动推演**：若上游/主链板块已启动，推演中下游低位补涨方向（如算力涨→液冷/铜连接，锂矿涨→电池/整车），写明联动传导的观察信号
@@ -717,12 +729,6 @@ async def _collect_rotation_data(db: AsyncSession) -> str:
     from modules.stock.services.rotation_service import RotationService
     from modules.stock.services.limit_up_service import LimitUpService
 
-    overview_fields = [
-        "board_name", "board_type", "stage", "action", "tomorrow_score",
-        "change_pct", "gain_3d", "gain_5d", "gain_10d",
-        "rank", "rank_change", "volume_ratio",
-        "inflow_days", "limit_up_count", "max_consecutive",
-    ]
     parts = [f"当前时间：{timezone.now().strftime('%Y-%m-%d %H:%M')}"]
 
     overviews: dict[str, dict] = {}
@@ -739,6 +745,7 @@ async def _collect_rotation_data(db: AsyncSession) -> str:
             history_days = (ov or {}).get("history_days")
             parts.append(
                 f"{label}板块轮动总览（快照日 {snapshot_date}，历史 {history_days} 个交易日，"
+                f"theme-所属主题、position_pct-近10日位置分位(低=低位)，"
                 f"按明日候选评分降序前 {_SECTOR_TOP_N}）：\n"
                 + json.dumps(items[:_SECTOR_TOP_N], ensure_ascii=False)
             )
@@ -747,6 +754,28 @@ async def _collect_rotation_data(db: AsyncSession) -> str:
                 f"{label}板块轮动总览：暂无数据（可能尚未同步或历史不足，"
                 "请基于其他数据分析并在报告中注明）"
             )
+
+    # 主题热度（跨行业+概念关键词聚合）：单一板块异动可能是噪声，同主题多板块
+    # 齐动（rising_ratio_3d 高）+ 低位（avg_position_pct 低）= 资金集结埋伏信号
+    themes = ((overviews.get("industry") or {}).get("themes")
+              or (overviews.get("concept") or {}).get("themes") or [])
+    if themes:
+        theme_slim = [
+            {k: t.get(k) for k in (
+                "theme", "member_count", "avg_change_pct", "avg_gain_5d",
+                "rising_ratio_3d", "inflow_ratio", "avg_position_pct",
+                "limit_up_total", "heat", "status",
+            )}
+            for t in themes[:10]
+        ]
+        parts.append(
+            "主题热度（行业+概念板块按主题聚合：member_count-成员板块数、"
+            "rising_ratio_3d-近3日成员上涨占比、inflow_ratio-今日净流入为正占比、"
+            "avg_position_pct-近10日位置分位(低=低位)、heat-热度0-100、"
+            "status-gathering集结升温/active发酵走强/hot高位过热/cooling退潮/flat平静，"
+            "按热度降序前 10）：\n"
+            + json.dumps(theme_slim, ensure_ascii=False)
+        )
 
     # 高低切换信号（板块内部高位滞涨/低位启动的结构变化）
     for board_type, label in (("industry", "行业"), ("concept", "概念")):

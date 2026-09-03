@@ -320,6 +320,22 @@ function actionTagType(action?: string): 'error' | 'warning' | 'success' | 'defa
   return 'default';
 }
 
+/** 主题热度状态配色：集结升温-蓝(埋伏窗口) / 发酵走强-橙 / 高位过热-红 / 退潮-绿 / 其他-灰 */
+function themeStatusTagType(status?: string): 'info' | 'warning' | 'error' | 'success' | 'default' {
+  switch (status) {
+    case 'gathering':
+      return 'info';
+    case 'active':
+      return 'warning';
+    case 'hot':
+      return 'error';
+    case 'cooling':
+      return 'success';
+    default:
+      return 'default';
+  }
+}
+
 /** 资讯分析不涉及研判章节开关 */
 const isNewsType = computed(() => props.analysisType === 'news');
 
@@ -541,6 +557,17 @@ onBeforeUnmount(stopPoll);
       >
         <NDescriptionsItem :label="$t('page.aiAnalysis.rotationLabel')">
           {{ rotationParsed.rotation_summary ?? '-' }}
+        </NDescriptionsItem>
+        <NDescriptionsItem v-if="rotationParsed.theme_heat?.length" :label="$t('page.aiAnalysis.rotation.themeHeatLabel')">
+          <div class="flex flex-col gap-2px">
+            <div v-for="(t, idx) in rotationParsed.theme_heat" :key="idx" class="flex-y-center">
+              <NTag size="small" :bordered="false" :type="themeStatusTagType(t.status)" class="flex-shrink-0">
+                <span class="font-500">{{ t.theme }}</span>
+                <span v-if="t.heat !== null && t.heat !== undefined" class="ml-4px">{{ t.heat }}</span>
+              </NTag>
+              <NText v-if="t.viewpoint" class="ml-6px text-12px">{{ t.viewpoint }}</NText>
+            </div>
+          </div>
         </NDescriptionsItem>
         <NDescriptionsItem v-if="rotationParsed.recent_boards?.length" :label="$t('page.aiAnalysis.rotation.recentBoardsLabel')">
           <NSpace :size="6" wrap>

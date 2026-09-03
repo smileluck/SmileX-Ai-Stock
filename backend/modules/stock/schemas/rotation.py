@@ -19,6 +19,10 @@ ROTATION_ACTIONS = ("attack", "ambush", "avoid", "watch")
 # 高低切换信号：switching-高低切换 / split-分歧 / resonance-共振 / unknown-数据不足
 SWITCH_SIGNALS = ("switching", "split", "resonance", "unknown")
 
+# 主题热度状态：gathering-集结升温(多板块同动且低位，埋伏窗口) / active-发酵走强 /
+# hot-高位过热 / cooling-退潮 / flat-平静
+ROTATION_THEME_STATUSES = ("gathering", "active", "hot", "cooling", "flat")
+
 
 class RotationOverviewItem(BaseEntity):
     """近期轮动板块指标项（读时计算，不入库）"""
@@ -51,6 +55,36 @@ class RotationOverviewItem(BaseEntity):
         ..., ge=0, le=100, description="明日轮动候选评分 0-100（规则计算）"
     )
     action: str = Field(..., description="操作建议: attack/ambush/avoid/watch")
+    theme: str | None = Field(
+        None, description="所属主题（板块名关键词聚合，如 军工/算力AI/医药医疗）"
+    )
+    position_pct: float | None = Field(
+        None, ge=0, le=1, description="近10日涨幅位置百分位（0=全体最低位，1=最高位）"
+    )
+
+
+class RotationThemeItem(BaseEntity):
+    """主题热度项（跨行业+概念按关键词聚合，读时计算）"""
+
+    theme: str
+    member_count: int = Field(..., ge=0, description="主题内成员板块数")
+    avg_change_pct: float | None = Field(None, description="成员今日平均涨幅(%)")
+    avg_gain_3d: float | None = Field(None, description="成员近3日平均涨幅(%)")
+    avg_gain_5d: float | None = Field(None, description="成员近5日平均涨幅(%)")
+    rising_ratio_3d: float | None = Field(
+        None, ge=0, le=1, description="近3日成员上涨占比（多板块同动=资金集结）"
+    )
+    inflow_ratio: float | None = Field(
+        None, ge=0, le=1, description="今日成员净流入为正占比"
+    )
+    avg_position_pct: float | None = Field(
+        None, ge=0, le=1, description="成员近10日位置百分位均值（低=低位）"
+    )
+    limit_up_total: int = Field(..., ge=0, description="近3日成员涨停家数合计")
+    heat: int = Field(..., ge=0, le=100, description="主题热度 0-100（广度40+动量25+资金20+低位15）")
+    status: str = Field(
+        ..., description="主题状态: gathering/active/hot/cooling/flat"
+    )
 
 
 class RotationOverviewResponse(BaseEntity):
@@ -60,6 +94,9 @@ class RotationOverviewResponse(BaseEntity):
     history_days: int = Field(..., description="实际可用的历史交易日数")
     items: list[RotationOverviewItem] = Field(
         default_factory=list, description="按明日候选评分降序"
+    )
+    themes: list[RotationThemeItem] = Field(
+        default_factory=list, description="主题热度（跨行业+概念聚合，按热度降序）"
     )
 
 

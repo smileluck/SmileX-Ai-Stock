@@ -20,6 +20,9 @@ declare namespace Api {
     /** 高低切换信号: switching-高低切换 / split-分歧 / resonance-共振 / unknown-数据不足 */
     type SwitchSignal = 'switching' | 'split' | 'resonance' | 'unknown';
 
+    /** 主题热度状态: gathering-集结升温 / active-发酵走强 / hot-高位过热 / cooling-退潮 / flat-平静 */
+    type RotationThemeStatus = 'gathering' | 'active' | 'hot' | 'cooling' | 'flat';
+
     /** 近期轮动板块指标项（读时计算，不入库） */
     interface RotationOverviewItem {
       /** 板块类型: industry/concept */
@@ -54,6 +57,36 @@ declare namespace Api {
       tomorrow_score: number;
       /** 操作建议 */
       action: RotationAction;
+      /** 所属主题（板块名关键词聚合，如 军工/算力AI/医药医疗） */
+      theme: string | null;
+      /** 近10日涨幅位置百分位（0=全体最低位，1=最高位） */
+      position_pct: number | null;
+    }
+
+    /** 主题热度项（跨行业+概念按关键词聚合，读时计算） */
+    interface RotationThemeItem {
+      /** 主题名（如 军工/算力AI） */
+      theme: string;
+      /** 主题内成员板块数 */
+      member_count: number;
+      /** 成员今日平均涨幅(%) */
+      avg_change_pct: number | null;
+      /** 成员近3日平均涨幅(%) */
+      avg_gain_3d: number | null;
+      /** 成员近5日平均涨幅(%) */
+      avg_gain_5d: number | null;
+      /** 近3日成员上涨占比（多板块同动=资金集结） */
+      rising_ratio_3d: number | null;
+      /** 今日成员净流入为正占比 */
+      inflow_ratio: number | null;
+      /** 成员近10日位置百分位均值（低=低位） */
+      avg_position_pct: number | null;
+      /** 近3日成员涨停家数合计 */
+      limit_up_total: number;
+      /** 主题热度 0-100 */
+      heat: number;
+      /** 主题状态 */
+      status: RotationThemeStatus;
     }
 
     /** 近期轮动板块总览响应 */
@@ -64,6 +97,8 @@ declare namespace Api {
       history_days: number;
       /** 按明日候选评分降序 */
       items: RotationOverviewItem[];
+      /** 主题热度（跨行业+概念聚合，按热度降序） */
+      themes: RotationThemeItem[];
     }
 
     /** 高低切换个股明细项 */

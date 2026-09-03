@@ -145,6 +145,35 @@ function signalTagType(signal: string): 'error' | 'warning' | 'info' | 'default'
   }
 }
 
+/** 主题热度状态标签（key 静态枚举，保证 I18nKey 类型收窄） */
+const THEME_STATUS_LABEL_KEYS = {
+  gathering: 'page.aiAnalysis.rotation.themeStatus_gathering',
+  active: 'page.aiAnalysis.rotation.themeStatus_active',
+  hot: 'page.aiAnalysis.rotation.themeStatus_hot',
+  cooling: 'page.aiAnalysis.rotation.themeStatus_cooling',
+  flat: 'page.aiAnalysis.rotation.themeStatus_flat'
+} as const;
+
+function themeStatusLabel(status: string) {
+  const key = THEME_STATUS_LABEL_KEYS[status as keyof typeof THEME_STATUS_LABEL_KEYS];
+  return key ? $t(key) : status;
+}
+
+function themeStatusTagType(status: string): 'info' | 'warning' | 'error' | 'success' | 'default' {
+  switch (status) {
+    case 'gathering':
+      return 'info';
+    case 'active':
+      return 'warning';
+    case 'hot':
+      return 'error';
+    case 'cooling':
+      return 'success';
+    default:
+      return 'default';
+  }
+}
+
 async function loadData() {
   loading.value = true;
   try {
@@ -160,6 +189,7 @@ async function loadData() {
 }
 
 function onBoardTypeChange() {
+  selectedTheme.value = '';
   loadData();
 }
 
@@ -201,12 +231,26 @@ const snapshotDate = computed(() => {
 });
 
 const overviewItems = computed(() => overview.value?.items ?? []);
-/** 近期轮动页签：按今日涨幅降序（复盘视角） */
-const recentItems = computed(() =>
-  [...overviewItems.value].sort((a, b) => (b.change_pct ?? -999) - (a.change_pct ?? -999))
-);
-/** 明日候选页签：接口已按评分降序，取前 TOP_N */
-const tomorrowItems = computed(() => overviewItems.value.slice(0, TOP_N));
+const themes = computed(() => overview.value?.themes ?? []);
+/** 主题热度条点击筛选：空串=全部板块 */
+const selectedTheme = ref('');
+
+function toggleTheme(theme: string) {
+  selectedTheme.value = selectedTheme.value === theme ? '' : theme;
+}
+
+/** 近期轮动页签：按今日涨幅降序（复盘视角），选中主题时过滤 */
+const recentItems = computed(() => {
+  let arr = [...overviewItems.value].sort((a, b) => (b.change_pct ?? -999) - (a.change_pct ?? -999));
+  if (selectedTheme.value) arr = arr.filter(x => x.theme === selectedTheme.value);
+  return arr;
+});
+/** 明日候选页签：接口已按评分降序，取前 TOP_N（选中主题时过滤后再取） */
+const tomorrowItems = computed(() => {
+  let arr = overviewItems.value;
+  if (selectedTheme.value) arr = arr.filter(x => x.theme === selectedTheme.value);
+  return arr.slice(0, TOP_N);
+});
 
 const overviewColumns = computed<DataTableColumns<Api.StockRotation.RotationOverviewItem>>(() => [
   {
@@ -215,6 +259,14 @@ const overviewColumns = computed<DataTableColumns<Api.StockRotation.RotationOver
     width: 130,
     fixed: 'left',
     render: row => <span class="font-500">{row.board_name}</span>
+  },
+  {
+    key: 'theme',
+    title: $t('page.aiAnalysis.rotation.themeCol'),
+    width: 82,
+    align: 'center',
+    render: row =>
+      row.theme ? <NTag size="small" bordered={false}>{row.theme}</NTag> : <NText depth={3}>-</NText>
   },
   {
     key: 'change_pct',
@@ -245,6 +297,18 @@ const overviewColumns = computed<DataTableColumns<Api.StockRotation.RotationOver
     width: 84,
     align: 'right',
     render: row => <span style={{ color: pctColor(row.gain_10d) }}>{fmtPct(row.gain_10d)}</span>
+  },
+  {
+    key: 'position_pct',
+    title: $t('page.aiAnalysis.rotation.positionCol'),
+    width: 68,
+    align: 'center',
+    render: row => {
+      const v = row.position_pct;
+      if (v === null || v === undefined) return <NText depth={3}>-</NText>;
+      const color = v <= 0.3 ? '#1890ff' : v >= 0.85 ? UP : FLAT;
+      return <span style={{ color }}>{`${Math.round(v * 100)}%`}</span>;
+    }
   },
   {
     key: 'rank_change',
@@ -359,6 +423,14 @@ const tomorrowColumns = computed<DataTableColumns<Api.StockRotation.RotationOver
     title: $t('page.aiAnalysis.rotation.boardCol'),
     width: 140,
     render: row => <span class="font-500">{row.board_name}</span>
+  },
+  {
+    key: 'theme',
+    title: $t('page.aiAnalysis.rotation.themeCol'),
+    width: 82,
+    align: 'center',
+    render: row =>
+      row.theme ? <NTag size="small" bordered={false}>{row.theme}</NTag> : <NText depth={3}>-</NText>
   },
   {
     key: 'action',
@@ -627,6 +699,27 @@ onMounted(() => {
         </NSpace>
       </template>
 
+      <!-- 主题热度条：跨行业+概念聚合，点击筛选近期轮动/明日候选两表；集结升温=埋伏窗口 -->
+      <div v-if="themes.length" class="mb-6px flex-y-center flex-wrap gap-6px">
+        <NText depth="3" class="text-12px flex-shrink-0">
+          {{ $t('page.aiAnalysis.rotation.themeHeatTitle') }}
+        </NText>
+        <NTag
+          v-for="t in themes"
+          :key="t.theme"
+          size="small"
+          round
+          checkable
+          :checked="selectedTheme === t.theme"
+          :type="themeStatusTagType(t.status)"
+          @update:checked="() => toggleTheme(t.theme)"
+        >
+          <span class="font-500">{{ t.theme }}</span>
+          <span class="ml-4px">{{ t.heat }}</span>
+          <span class="ml-4px text-11px opacity-75">{{ themeStatusLabel(t.status) }}</span>
+        </NTag>
+      </div>
+
       <NTabs v-model:value="activeTab" type="line" size="small">
         <NTabPane name="overview" :tab="$t('page.aiAnalysis.rotation.tabOverview')">
           <NDataTable
@@ -634,9 +727,9 @@ onMounted(() => {
             :data="recentItems"
             size="small"
             :loading="loading"
-            :scroll-x="980"
+            :scroll-x="1140"
             :row-key="(row: Api.StockRotation.RotationOverviewItem) => row.board_code"
-            max-height="calc(100vh - 300px)"
+            max-height="calc(100vh - 330px)"
           />
         </NTabPane>
         <NTabPane name="tomorrow" :tab="$t('page.aiAnalysis.rotation.tabTomorrow')">
@@ -645,9 +738,9 @@ onMounted(() => {
             :data="tomorrowItems"
             size="small"
             :loading="loading"
-            :scroll-x="900"
+            :scroll-x="990"
             :row-key="(row: Api.StockRotation.RotationOverviewItem) => row.board_code"
-            max-height="calc(100vh - 300px)"
+            max-height="calc(100vh - 330px)"
           />
         </NTabPane>
         <NTabPane name="switch" :tab="$t('page.aiAnalysis.rotation.tabSwitch')">
