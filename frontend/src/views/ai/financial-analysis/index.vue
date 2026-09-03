@@ -12,7 +12,6 @@ import {
   NDescriptionsItem,
   NDrawer,
   NDrawerContent,
-  NEmpty,
   NInput,
   NPagination,
   NPopover,
@@ -23,7 +22,6 @@ import {
 } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import dayjs from 'dayjs';
-import MarkdownIt from 'markdown-it';
 import {
   fetchGetFinancialConfig,
   fetchGetFinancialInterpretationDetail,
@@ -34,13 +32,15 @@ import {
 } from '@/service/api';
 import { useAuth } from '@/hooks/business/auth';
 import { $t } from '@/locales';
+import AnalysisMarkdown from '../components/analysis-markdown.vue';
+import AnalysisSection from '../components/analysis-section.vue';
+import AnalysisStatusView from '../components/analysis-status-view.vue';
+import AnalysisSummaryCard from '../components/analysis-summary-card.vue';
 
 defineOptions({ name: 'AiFinancialAnalysis' });
 
 const { hasAuth } = useAuth();
 const canRun = hasAuth('financial:run');
-
-const md = new MarkdownIt({ breaks: true, linkify: true, html: false });
 
 // ==================== 股票查询与解读 ====================
 const stockCode = ref('');
@@ -233,15 +233,6 @@ const drawerLoading = ref(false);
 
 const drawerParsed = computed(() => drawerDetail.value?.parsed_result ?? null);
 
-const drawerMarkdown = computed(() => {
-  const raw = drawerDetail.value?.ai_raw_response ?? '';
-  const stripped = raw
-    .replace(/```json\s*\{[\s\S]*?\}\s*```/, '')
-    .replace(/<think>[\s\S]*?<\/think>/, '')
-    .trim();
-  return md.render(stripped);
-});
-
 const TRIGGER_LABEL: Record<string, string> = {
   schedule: $t('page.aiAnalysis.triggerSchedule'),
   manual: $t('page.aiAnalysis.triggerManual')
@@ -411,15 +402,6 @@ function forecastType(direction?: string): 'error' | 'success' | 'warning' {
   return 'warning';
 }
 
-const renderedMarkdown = computed(() => {
-  const raw = current.value?.ai_raw_response ?? '';
-  const stripped = raw
-    .replace(/```json\s*\{[\s\S]*?\}\s*```/, '')
-    .replace(/<think>[\s\S]*?<\/think>/, '')
-    .trim();
-  return md.render(stripped);
-});
-
 /** 财报指标表（最新一期） */
 const metricRows = computed(() => {
   const metrics = latestReport.value?.metrics ?? {};
@@ -476,79 +458,80 @@ onBeforeUnmount(stopPoll);
       :title="$t('page.financial.reportTitle')"
     >
       <!-- 生成中 -->
-      <div v-if="current?.status === 'running'" class="flex-col items-center gap-12px py-48px">
-        <icon-mdi-robot-excited class="text-48px" style="color: var(--primary-color)" />
-        <NText depth="3">{{ $t('page.aiAnalysis.generatingTip') }}</NText>
-      </div>
+      <AnalysisStatusView v-if="current?.status === 'running'" status="running" />
 
       <!-- 失败 -->
-      <div v-else-if="current?.status === 'failed'" class="py-24px">
-        <NEmpty :description="$t('page.aiAnalysis.failedTip')">
-          <template #icon><icon-mdi-alert-circle-outline class="text-48px" style="color: #e0a240" /></template>
-          <template #extra>
-            <NText type="error" class="text-12px">{{ current.error_msg }}</NText>
-          </template>
-        </NEmpty>
-      </div>
+      <AnalysisStatusView
+        v-else-if="current?.status === 'failed'"
+        status="failed"
+        :error-msg="current.error_msg"
+      />
 
       <!-- 成功解读 -->
       <template v-else-if="current?.status === 'success' && current.ai_raw_response">
-        <NDescriptions v-if="parsed" label-placement="left" :column="3" size="small" bordered class="mb-12px">
-          <NDescriptionsItem :label="$t('page.financial.ratingLabel')">
-            <NTag :type="ratingType(parsed.quality_rating)" size="small">
-              {{ parsed.quality_rating ?? '-' }}
-            </NTag>
-          </NDescriptionsItem>
-          <NDescriptionsItem :label="$t('page.financial.nextRatingLabel')">
-            <NTag :type="ratingType(parsed.next_quality_rating)" size="small" :bordered="false">
-              {{ parsed.next_quality_rating ?? '-' }}
-            </NTag>
-          </NDescriptionsItem>
-          <NDescriptionsItem :label="$t('page.financial.forecastLabel')">
-            <NSpace align="center" :size="8">
+        <AnalysisSummaryCard v-if="parsed">
+          <div class="flex flex-wrap items-center gap-x-24px gap-y-8px">
+            <div class="flex-y-center gap-8px">
+              <NText depth="3" class="text-12px">{{ $t('page.financial.ratingLabel') }}</NText>
+              <NTag :type="ratingType(parsed.quality_rating)" size="small">
+                {{ parsed.quality_rating ?? '-' }}
+              </NTag>
+            </div>
+            <div class="flex-y-center gap-8px">
+              <NText depth="3" class="text-12px">{{ $t('page.financial.nextRatingLabel') }}</NText>
+              <NTag :type="ratingType(parsed.next_quality_rating)" size="small" :bordered="false">
+                {{ parsed.next_quality_rating ?? '-' }}
+              </NTag>
+            </div>
+            <div class="flex-y-center gap-8px">
+              <NText depth="3" class="text-12px">{{ $t('page.financial.forecastLabel') }}</NText>
               <NTag :type="forecastType(parsed.forecast?.direction)" size="small" :bordered="false">
                 {{ parsed.forecast?.direction || '-' }}
               </NTag>
-              <NText depth="2" class="text-13px">{{ parsed.forecast?.summary || '' }}</NText>
-            </NSpace>
-          </NDescriptionsItem>
-          <NDescriptionsItem :label="$t('page.aiAnalysis.summaryLabel')">
-            {{ current.report_period ?? '-' }}
-          </NDescriptionsItem>
-          <NDescriptionsItem :label="$t('page.financial.industryCol')">
-            {{ current.industry ?? '-' }}
-          </NDescriptionsItem>
-        </NDescriptions>
-        <div v-if="parsed?.forecast?.drivers?.length" class="mb-12px">
-          <NText class="mb-4px block text-13px font-500">
-            {{ $t('page.financial.forecastDriversLabel') }}
+            </div>
+            <div class="flex-y-center gap-8px">
+              <NText depth="3" class="text-12px">{{ $t('page.financial.periodCol') }}</NText>
+              <NText class="text-13px">{{ current.report_period ?? '-' }}</NText>
+            </div>
+            <div class="flex-y-center gap-8px">
+              <NText depth="3" class="text-12px">{{ $t('page.financial.industryCol') }}</NText>
+              <NText class="text-13px">{{ current.industry ?? '-' }}</NText>
+            </div>
+          </div>
+          <NText v-if="parsed.forecast?.summary" depth="2" class="mt-6px block text-13px leading-22px">
+            {{ parsed.forecast.summary }}
           </NText>
+        </AnalysisSummaryCard>
+
+        <AnalysisSection v-if="parsed?.forecast?.drivers?.length" :title="$t('page.financial.forecastDriversLabel')">
           <ul class="m-0 pl-20px">
             <li v-for="(p, i) in parsed.forecast.drivers" :key="i" class="text-13px leading-22px">{{ p }}</li>
           </ul>
-        </div>
-        <div v-if="researchBriefText(current?.research_brief ?? null)" class="mb-12px">
-          <NText class="mb-4px block text-13px font-500">
-            {{ $t('page.financial.researchBriefLabel') }}
-          </NText>
-          <div class="text-13px">{{ researchBriefText(current?.research_brief ?? null) }}</div>
-        </div>
-        <div v-if="parsed?.highlights?.length" class="mb-12px">
-          <NText class="mb-4px block text-13px font-500">{{ $t('page.financial.highlightsLabel') }}</NText>
+        </AnalysisSection>
+
+        <AnalysisSection
+          v-if="researchBriefText(current?.research_brief ?? null)"
+          :title="$t('page.financial.researchBriefLabel')"
+        >
+          <div class="text-13px leading-22px">{{ researchBriefText(current?.research_brief ?? null) }}</div>
+        </AnalysisSection>
+
+        <AnalysisSection v-if="parsed?.highlights?.length" :title="$t('page.financial.highlightsLabel')">
           <ul class="m-0 pl-20px">
             <li v-for="(p, i) in parsed.highlights" :key="i" class="text-13px leading-22px">{{ p }}</li>
           </ul>
-        </div>
-        <div v-if="parsed?.risks?.length" class="mb-12px">
-          <NText class="mb-4px block text-13px font-500">{{ $t('page.financial.risksLabel') }}</NText>
+        </AnalysisSection>
+
+        <AnalysisSection v-if="parsed?.risks?.length" :title="$t('page.financial.risksLabel')">
           <ul class="m-0 pl-20px">
             <li v-for="(p, i) in parsed.risks" :key="i" class="text-13px leading-22px">{{ p }}</li>
           </ul>
-        </div>
-        <div class="analysis-markdown text-13px" v-html="renderedMarkdown" />
+        </AnalysisSection>
+
+        <AnalysisMarkdown class="mt-14px block" :raw="current.ai_raw_response" />
       </template>
 
-      <NEmpty v-else class="py-48px" :description="$t('page.financial.emptyTip')" />
+      <AnalysisStatusView v-else status="empty" :empty-tip="$t('page.financial.emptyTip')" />
     </NCard>
 
     <!-- 最新一期财报指标 -->
@@ -615,81 +598,89 @@ onBeforeUnmount(stopPoll);
         </div>
 
         <!-- 生成中 -->
-        <div v-else-if="drawerDetail?.status === 'running'" class="flex-col items-center gap-12px py-48px">
-          <icon-mdi-robot-excited class="text-48px" style="color: var(--primary-color)" />
-          <NText depth="3">{{ $t('page.aiAnalysis.generatingTip') }}</NText>
-        </div>
+        <AnalysisStatusView v-else-if="drawerDetail?.status === 'running'" status="running" />
 
         <!-- 失败 -->
-        <div v-else-if="drawerDetail?.status === 'failed'" class="py-24px">
-          <NEmpty :description="$t('page.aiAnalysis.failedTip')">
-            <template #icon><icon-mdi-alert-circle-outline class="text-48px" style="color: #e0a240" /></template>
-            <template #extra>
-              <NText type="error" class="text-12px">{{ drawerDetail.error_msg }}</NText>
-            </template>
-          </NEmpty>
-        </div>
+        <AnalysisStatusView
+          v-else-if="drawerDetail?.status === 'failed'"
+          status="failed"
+          :error-msg="drawerDetail.error_msg"
+        />
 
         <!-- 成功解读 -->
         <template v-else-if="drawerDetail?.status === 'success' && drawerDetail.ai_raw_response">
-          <NDescriptions v-if="drawerParsed" label-placement="left" :column="1" size="small" bordered class="mb-12px">
-            <NDescriptionsItem :label="$t('page.financial.periodCol')">
-              {{ drawerDetail.report_period ?? '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem :label="$t('page.financial.industryCol')">
-              {{ drawerDetail.industry ?? '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem :label="$t('page.financial.ratingLabel')">
-              <NTag :type="ratingType(drawerParsed.quality_rating)" size="small">
-                {{ drawerParsed.quality_rating ?? '-' }}
-              </NTag>
-            </NDescriptionsItem>
-            <NDescriptionsItem :label="$t('page.financial.nextRatingLabel')">
-              <NTag :type="ratingType(drawerParsed.next_quality_rating)" size="small" :bordered="false">
-                {{ drawerParsed.next_quality_rating ?? '-' }}
-              </NTag>
-            </NDescriptionsItem>
-            <NDescriptionsItem :label="$t('page.financial.forecastLabel')">
-              <NSpace align="center" :size="8">
+          <AnalysisSummaryCard v-if="drawerParsed">
+            <div class="flex flex-wrap items-center gap-x-24px gap-y-8px">
+              <div class="flex-y-center gap-8px">
+                <NText depth="3" class="text-12px">{{ $t('page.financial.ratingLabel') }}</NText>
+                <NTag :type="ratingType(drawerParsed.quality_rating)" size="small">
+                  {{ drawerParsed.quality_rating ?? '-' }}
+                </NTag>
+              </div>
+              <div class="flex-y-center gap-8px">
+                <NText depth="3" class="text-12px">{{ $t('page.financial.nextRatingLabel') }}</NText>
+                <NTag :type="ratingType(drawerParsed.next_quality_rating)" size="small" :bordered="false">
+                  {{ drawerParsed.next_quality_rating ?? '-' }}
+                </NTag>
+              </div>
+              <div class="flex-y-center gap-8px">
+                <NText depth="3" class="text-12px">{{ $t('page.financial.forecastLabel') }}</NText>
                 <NTag :type="forecastType(drawerParsed.forecast?.direction)" size="small" :bordered="false">
                   {{ drawerParsed.forecast?.direction || '-' }}
                 </NTag>
-                <NText depth="2" class="text-13px">{{ drawerParsed.forecast?.summary || '' }}</NText>
-              </NSpace>
-            </NDescriptionsItem>
-          </NDescriptions>
-          <div v-if="drawerParsed?.forecast?.drivers?.length" class="mb-12px">
-            <NText class="mb-4px block text-13px font-500">
-              {{ $t('page.financial.forecastDriversLabel') }}
+              </div>
+              <div class="flex-y-center gap-8px">
+                <NText depth="3" class="text-12px">{{ $t('page.financial.periodCol') }}</NText>
+                <NText class="text-13px">{{ drawerDetail.report_period ?? '-' }}</NText>
+              </div>
+              <div class="flex-y-center gap-8px">
+                <NText depth="3" class="text-12px">{{ $t('page.financial.industryCol') }}</NText>
+                <NText class="text-13px">{{ drawerDetail.industry ?? '-' }}</NText>
+              </div>
+            </div>
+            <NText
+              v-if="drawerParsed.forecast?.summary"
+              depth="2"
+              class="mt-6px block text-13px leading-22px"
+            >
+              {{ drawerParsed.forecast.summary }}
             </NText>
+          </AnalysisSummaryCard>
+
+          <AnalysisSection
+            v-if="drawerParsed?.forecast?.drivers?.length"
+            :title="$t('page.financial.forecastDriversLabel')"
+          >
             <ul class="m-0 pl-20px">
               <li v-for="(p, i) in drawerParsed.forecast.drivers" :key="i" class="text-13px leading-22px">
                 {{ p }}
               </li>
             </ul>
-          </div>
-          <div v-if="researchBriefText(drawerDetail?.research_brief ?? null)" class="mb-12px">
-            <NText class="mb-4px block text-13px font-500">
-              {{ $t('page.financial.researchBriefLabel') }}
-            </NText>
-            <div class="text-13px">{{ researchBriefText(drawerDetail?.research_brief ?? null) }}</div>
-          </div>
-          <div v-if="drawerParsed?.highlights?.length" class="mb-12px">
-            <NText class="mb-4px block text-13px font-500">{{ $t('page.financial.highlightsLabel') }}</NText>
+          </AnalysisSection>
+
+          <AnalysisSection
+            v-if="researchBriefText(drawerDetail?.research_brief ?? null)"
+            :title="$t('page.financial.researchBriefLabel')"
+          >
+            <div class="text-13px leading-22px">{{ researchBriefText(drawerDetail?.research_brief ?? null) }}</div>
+          </AnalysisSection>
+
+          <AnalysisSection v-if="drawerParsed?.highlights?.length" :title="$t('page.financial.highlightsLabel')">
             <ul class="m-0 pl-20px">
               <li v-for="(p, i) in drawerParsed.highlights" :key="i" class="text-13px leading-22px">{{ p }}</li>
             </ul>
-          </div>
-          <div v-if="drawerParsed?.risks?.length" class="mb-12px">
-            <NText class="mb-4px block text-13px font-500">{{ $t('page.financial.risksLabel') }}</NText>
+          </AnalysisSection>
+
+          <AnalysisSection v-if="drawerParsed?.risks?.length" :title="$t('page.financial.risksLabel')">
             <ul class="m-0 pl-20px">
               <li v-for="(p, i) in drawerParsed.risks" :key="i" class="text-13px leading-22px">{{ p }}</li>
             </ul>
-          </div>
-          <div class="analysis-markdown text-13px" v-html="drawerMarkdown" />
+          </AnalysisSection>
+
+          <AnalysisMarkdown class="mt-14px block" :raw="drawerDetail.ai_raw_response" />
         </template>
 
-        <NEmpty v-else class="py-48px" :description="$t('page.financial.emptyTip')" />
+        <AnalysisStatusView v-else status="empty" :empty-tip="$t('page.financial.emptyTip')" />
       </NDrawerContent>
     </NDrawer>
 
@@ -721,37 +712,3 @@ onBeforeUnmount(stopPoll);
     </NDrawer>
   </div>
 </template>
-
-<style scoped>
-.analysis-markdown :deep(h2) {
-  margin: 14px 0 8px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.analysis-markdown :deep(h3) {
-  margin: 10px 0 6px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.analysis-markdown :deep(p) {
-  margin: 6px 0;
-  line-height: 22px;
-}
-.analysis-markdown :deep(ul),
-.analysis-markdown :deep(ol) {
-  margin: 6px 0;
-  padding-left: 20px;
-}
-.analysis-markdown :deep(li) {
-  line-height: 22px;
-}
-.analysis-markdown :deep(table) {
-  border-collapse: collapse;
-  margin: 8px 0;
-}
-.analysis-markdown :deep(th),
-.analysis-markdown :deep(td) {
-  border: 1px solid rgba(128, 128, 128, 0.3);
-  padding: 4px 10px;
-}
-</style>

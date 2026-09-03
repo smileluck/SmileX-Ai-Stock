@@ -1,9 +1,10 @@
 <script setup lang="tsx">
 /**
- * AI 分析报告面板（大盘/板块分析页共用）
+ * AI 分析报告面板（大盘/板块/资讯/轮动分析页共用）
  * - 生成分析按钮（analysis:run 权限）：提交后异步生成，自动轮询最新记录
  * - 分析策略按钮（analysis:strategy 权限）：策略提示词 + 明日研判开关，放在历史记录旁编辑
- * - 报告展示：结构化摘要徽章（情绪/温度 或 轮动总结/热门板块）+ 明日研判 + markdown 正文
+ * - 报告展示：摘要卡（情绪/温度 或 轮动总结）+ 统一区块（主题热度/标签云/资讯列表）
+ *   + 明日研判条 + 核心观察 + markdown 正文（AnalysisMarkdown 统一渲染）
  * - 历史记录抽屉：分页列表，点击回看指定记录
  */
 import { computed, onBeforeUnmount, ref } from 'vue';
@@ -11,13 +12,9 @@ import {
   NButton,
   NCard,
   NDataTable,
-  NDescriptions,
-  NDescriptionsItem,
   NDrawer,
   NDrawerContent,
   NEmpty,
-  NForm,
-  NFormItem,
   NInput,
   NPagination,
   NProgress,
@@ -28,7 +25,6 @@ import {
 } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import dayjs from 'dayjs';
-import MarkdownIt from 'markdown-it';
 import {
   fetchGetAnalysisConfig,
   fetchGetAnalysisRunDetail,
@@ -39,6 +35,10 @@ import {
 } from '@/service/api';
 import { useAuth } from '@/hooks/business/auth';
 import { $t } from '@/locales';
+import AnalysisMarkdown from './analysis-markdown.vue';
+import AnalysisSection from './analysis-section.vue';
+import AnalysisStatusView from './analysis-status-view.vue';
+import AnalysisSummaryCard from './analysis-summary-card.vue';
 
 defineOptions({ name: 'AnalysisReportPanel' });
 
@@ -50,8 +50,6 @@ const props = defineProps<{
 const { hasAuth } = useAuth();
 const canRun = hasAuth('analysis:run');
 const canEditStrategy = hasAuth('analysis:strategy');
-
-const md = new MarkdownIt({ breaks: true, linkify: true, html: false });
 
 // ==================== 最新报告与轮询 ====================
 const latest = ref<Api.Analysis.AnalysisRunDetail | null>(null);
@@ -389,16 +387,6 @@ function tomorrowType(direction?: string): 'error' | 'success' | 'warning' {
   return 'warning';
 }
 
-const renderedMarkdown = computed(() => {
-  const raw = current.value?.ai_raw_response ?? '';
-  // 报告正文：去掉开头的 ```json 摘要代码块与推理模型泄漏的 <think> 块后渲染
-  const stripped = raw
-    .replace(/```json\s*\{[\s\S]*?\}\s*```/, '')
-    .replace(/<think>[\s\S]*?<\/think>/, '')
-    .trim();
-  return md.render(stripped);
-});
-
 function sentimentType(sentiment?: string): 'error' | 'success' | 'warning' {
   if (sentiment?.includes('看多')) return 'error';
   if (sentiment?.includes('看空')) return 'success';
@@ -474,157 +462,177 @@ onBeforeUnmount(stopPoll);
     </template>
 
     <!-- 生成中 -->
-    <div v-if="current?.status === 'running'" class="flex-col items-center gap-12px py-48px">
-      <icon-mdi-robot-excited class="text-48px" style="color: var(--primary-color)" />
-      <NText depth="3">{{ $t('page.aiAnalysis.generatingTip') }}</NText>
-    </div>
+    <AnalysisStatusView v-if="current?.status === 'running'" status="running" />
 
     <!-- 失败 -->
-    <div v-else-if="current?.status === 'failed'" class="py-24px">
-      <NEmpty :description="$t('page.aiAnalysis.failedTip')">
-        <template #icon><icon-mdi-alert-circle-outline class="text-48px" style="color: #e0a240" /></template>
-        <template #extra>
-          <NText type="error" class="text-12px">{{ current.error_msg }}</NText>
-        </template>
-      </NEmpty>
-    </div>
+    <AnalysisStatusView
+      v-else-if="current?.status === 'failed'"
+      status="failed"
+      :error-msg="current.error_msg"
+    />
 
     <!-- 成功报告 -->
     <template v-else-if="current?.status === 'success' && current.ai_raw_response">
-      <!-- 结构化摘要 -->
-      <NDescriptions v-if="marketParsed" label-placement="left" :column="3" size="small" bordered class="mb-12px">
-        <NDescriptionsItem :label="$t('page.aiAnalysis.sentimentLabel')">
-          <NTag :type="sentimentType(marketParsed.sentiment)" size="small">
-            {{ marketParsed.sentiment ?? '-' }}
-          </NTag>
-        </NDescriptionsItem>
-        <NDescriptionsItem :label="$t('page.aiAnalysis.scoreLabel')">
-          <NSpace align="center" :size="8">
-            <NProgress
-              type="circle"
-              :percentage="marketParsed.score ?? 0"
-              :color="scoreColor(marketParsed.score)"
-              :stroke-width="6"
-              :show-indicator="false"
-              style="width: 18px"
-            />
-            <span :style="{ color: scoreColor(marketParsed.score), fontWeight: '600' }">
-              {{ marketParsed.score ?? '-' }}
-            </span>
-          </NSpace>
-        </NDescriptionsItem>
-        <NDescriptionsItem :label="$t('page.aiAnalysis.summaryLabel')" :span="1">
+      <!-- 大盘：情绪 + 温度 + 总评摘要卡 -->
+      <AnalysisSummaryCard v-if="marketParsed">
+        <div class="flex flex-wrap items-center gap-x-24px gap-y-8px">
+          <div class="flex-y-center gap-8px">
+            <NText depth="3" class="text-12px">{{ $t('page.aiAnalysis.sentimentLabel') }}</NText>
+            <NTag :type="sentimentType(marketParsed.sentiment)" size="small">
+              {{ marketParsed.sentiment ?? '-' }}
+            </NTag>
+          </div>
+          <div class="flex-y-center gap-8px">
+            <NText depth="3" class="text-12px">{{ $t('page.aiAnalysis.scoreLabel') }}</NText>
+            <NSpace align="center" :size="6">
+              <NProgress
+                type="circle"
+                :percentage="marketParsed.score ?? 0"
+                :color="scoreColor(marketParsed.score)"
+                :stroke-width="6"
+                :show-indicator="false"
+                style="width: 18px"
+              />
+              <span :style="{ color: scoreColor(marketParsed.score), fontWeight: '600' }">
+                {{ marketParsed.score ?? '-' }}
+              </span>
+            </NSpace>
+          </div>
+        </div>
+        <NText depth="3" class="mb-2px mt-8px block text-12px">{{ $t('page.aiAnalysis.summaryLabel') }}</NText>
+        <NText depth="2" class="block text-13px leading-22px">
           {{ marketParsed.summary ?? '-' }}
-        </NDescriptionsItem>
-      </NDescriptions>
-      <NDescriptions
-        v-if="sectorParsed"
-        label-placement="left"
-        :column="1"
-        size="small"
-        bordered
-        class="mb-12px"
-      >
-        <NDescriptionsItem :label="$t('page.aiAnalysis.rotationLabel')">
+        </NText>
+      </AnalysisSummaryCard>
+
+      <!-- 板块/轮动：轮动总结摘要卡 -->
+      <AnalysisSummaryCard v-if="sectorParsed">
+        <NText depth="3" class="mb-2px block text-12px">{{ $t('page.aiAnalysis.rotationLabel') }}</NText>
+        <NText depth="2" class="block text-13px leading-22px">
           {{ sectorParsed.rotation_summary ?? '-' }}
-        </NDescriptionsItem>
-        <NDescriptionsItem v-if="sectorParsed.hot_boards?.length" :label="$t('page.aiAnalysis.hotBoardsLabel')">
-          <NSpace :size="6" wrap>
-            <NTag
-              v-for="(board, idx) in sectorParsed.hot_boards"
-              :key="idx"
-              size="small"
-              :bordered="false"
-              type="info"
-            >
-              {{ board.board_name }}
-              <span v-if="board.change_pct !== null && board.change_pct !== undefined" :style="{ color: pctColor(board.change_pct) }">
-                {{ board.change_pct! > 0 ? '+' : '' }}{{ board.change_pct!.toFixed(2) }}%
-              </span>
-            </NTag>
-          </NSpace>
-        </NDescriptionsItem>
-      </NDescriptions>
-
-      <!-- 轮动策略分析：轮动总结 + 近期板块 + 明日候选 + 切换信号 -->
-      <NDescriptions
-        v-if="rotationParsed"
-        label-placement="left"
-        :column="1"
-        size="small"
-        bordered
-        class="mb-12px"
-      >
-        <NDescriptionsItem :label="$t('page.aiAnalysis.rotationLabel')">
+        </NText>
+      </AnalysisSummaryCard>
+      <AnalysisSummaryCard v-if="rotationParsed">
+        <NText depth="3" class="mb-2px block text-12px">{{ $t('page.aiAnalysis.rotationLabel') }}</NText>
+        <NText depth="2" class="block text-13px leading-22px">
           {{ rotationParsed.rotation_summary ?? '-' }}
-        </NDescriptionsItem>
-        <NDescriptionsItem v-if="rotationParsed.theme_heat?.length" :label="$t('page.aiAnalysis.rotation.themeHeatLabel')">
-          <div class="flex flex-col gap-2px">
-            <div v-for="(t, idx) in rotationParsed.theme_heat" :key="idx" class="flex-y-center">
-              <NTag size="small" :bordered="false" :type="themeStatusTagType(t.status)" class="flex-shrink-0">
-                <span class="font-500">{{ t.theme }}</span>
-                <span v-if="t.heat !== null && t.heat !== undefined" class="ml-4px">{{ t.heat }}</span>
-              </NTag>
-              <NText v-if="t.viewpoint" class="ml-6px text-12px">{{ t.viewpoint }}</NText>
-            </div>
-          </div>
-        </NDescriptionsItem>
-        <NDescriptionsItem v-if="rotationParsed.recent_boards?.length" :label="$t('page.aiAnalysis.rotation.recentBoardsLabel')">
-          <NSpace :size="6" wrap>
-            <NTag
-              v-for="(board, idx) in rotationParsed.recent_boards"
-              :key="idx"
-              size="small"
-              :bordered="false"
-              :type="stageTagType(board.stage)"
-            >
-              {{ board.board_name }}
-              <span v-if="board.change_pct !== null && board.change_pct !== undefined" :style="{ color: pctColor(board.change_pct) }">
-                {{ board.change_pct! > 0 ? '+' : '' }}{{ board.change_pct!.toFixed(2) }}%
-              </span>
-            </NTag>
-          </NSpace>
-        </NDescriptionsItem>
-        <NDescriptionsItem v-if="rotationParsed.tomorrow_boards?.length" :label="$t('page.aiAnalysis.rotation.tomorrowBoardsLabel')">
-          <NSpace :size="6" wrap>
-            <NTag
-              v-for="(board, idx) in rotationParsed.tomorrow_boards"
-              :key="idx"
-              size="small"
-              :bordered="false"
-              :type="actionTagType(board.action)"
-            >
-              {{ board.board_name }}
-              <span v-if="board.action">{{ board.action }}</span>
-              <span v-if="board.confidence" class="text-11px opacity-70">{{ board.confidence }}</span>
-            </NTag>
-          </NSpace>
-        </NDescriptionsItem>
-        <NDescriptionsItem v-if="rotationParsed.switch_signals?.length" :label="$t('page.aiAnalysis.rotation.switchSignalsLabel')">
-          <div class="flex flex-col gap-2px">
-            <NText v-for="(sig, idx) in rotationParsed.switch_signals" :key="idx" class="text-12px">
-              <span class="font-500">{{ sig.board_name }}</span>
-              <span class="ml-6px">{{ sig.summary }}</span>
-            </NText>
-          </div>
-        </NDescriptionsItem>
-      </NDescriptions>
+        </NText>
+      </AnalysisSummaryCard>
 
-      <!-- 每日资讯分析：总评 + 两个分类列表（宏观/行业 与 个股，各≤10条） -->
+      <!-- 资讯：总评摘要卡 -->
+      <AnalysisSummaryCard v-if="newsParsed">
+        <NText depth="3" class="mb-2px block text-12px">{{ $t('page.aiAnalysis.summaryLabel') }}</NText>
+        <NText depth="2" class="block text-13px leading-22px">
+          {{ newsParsed.summary ?? '-' }}
+        </NText>
+      </AnalysisSummaryCard>
+
+      <!-- 板块：关注板块标签云 -->
+      <AnalysisSection
+        v-if="sectorParsed?.hot_boards?.length"
+        :title="$t('page.aiAnalysis.hotBoardsLabel')"
+      >
+        <NSpace :size="6" wrap>
+          <NTag
+            v-for="(board, idx) in sectorParsed.hot_boards"
+            :key="idx"
+            size="small"
+            :bordered="false"
+            type="info"
+          >
+            {{ board.board_name }}
+            <span
+              v-if="board.change_pct !== null && board.change_pct !== undefined"
+              :style="{ color: pctColor(board.change_pct) }"
+            >
+              {{ board.change_pct! > 0 ? '+' : '' }}{{ board.change_pct!.toFixed(2) }}%
+            </span>
+          </NTag>
+        </NSpace>
+      </AnalysisSection>
+
+      <!-- 轮动：主题热度 -->
+      <AnalysisSection
+        v-if="rotationParsed?.theme_heat?.length"
+        :title="$t('page.aiAnalysis.rotation.themeHeatLabel')"
+      >
+        <div class="flex flex-col gap-6px">
+          <div v-for="(t, idx) in rotationParsed.theme_heat" :key="idx" class="flex-y-center">
+            <NTag size="small" :bordered="false" :type="themeStatusTagType(t.status)" class="flex-shrink-0">
+              <span class="font-500">{{ t.theme }}</span>
+              <span v-if="t.heat !== null && t.heat !== undefined" class="ml-4px">{{ t.heat }}</span>
+            </NTag>
+            <NText v-if="t.viewpoint" class="ml-8px text-12px leading-20px">{{ t.viewpoint }}</NText>
+          </div>
+        </div>
+      </AnalysisSection>
+
+      <!-- 轮动：近期板块 -->
+      <AnalysisSection
+        v-if="rotationParsed?.recent_boards?.length"
+        :title="$t('page.aiAnalysis.rotation.recentBoardsLabel')"
+      >
+        <NSpace :size="6" wrap>
+          <NTag
+            v-for="(board, idx) in rotationParsed.recent_boards"
+            :key="idx"
+            size="small"
+            :bordered="false"
+            :type="stageTagType(board.stage)"
+          >
+            {{ board.board_name }}
+            <span
+              v-if="board.change_pct !== null && board.change_pct !== undefined"
+              :style="{ color: pctColor(board.change_pct) }"
+            >
+              {{ board.change_pct! > 0 ? '+' : '' }}{{ board.change_pct!.toFixed(2) }}%
+            </span>
+          </NTag>
+        </NSpace>
+      </AnalysisSection>
+
+      <!-- 轮动：明日候选 -->
+      <AnalysisSection
+        v-if="rotationParsed?.tomorrow_boards?.length"
+        :title="$t('page.aiAnalysis.rotation.tomorrowBoardsLabel')"
+      >
+        <NSpace :size="6" wrap>
+          <NTag
+            v-for="(board, idx) in rotationParsed.tomorrow_boards"
+            :key="idx"
+            size="small"
+            :bordered="false"
+            :type="actionTagType(board.action)"
+          >
+            {{ board.board_name }}
+            <span v-if="board.action">{{ board.action }}</span>
+            <span v-if="board.confidence" class="text-11px opacity-70">{{ board.confidence }}</span>
+          </NTag>
+        </NSpace>
+      </AnalysisSection>
+
+      <!-- 轮动：切换信号 -->
+      <AnalysisSection
+        v-if="rotationParsed?.switch_signals?.length"
+        :title="$t('page.aiAnalysis.rotation.switchSignalsLabel')"
+      >
+        <div class="flex flex-col gap-4px">
+          <NText v-for="(sig, idx) in rotationParsed.switch_signals" :key="idx" class="text-12px leading-20px">
+            <span class="font-500">{{ sig.board_name }}</span>
+            <span class="ml-6px">{{ sig.summary }}</span>
+          </NText>
+        </div>
+      </AnalysisSection>
+
+      <!-- 资讯：宏观/行业 与 个股 两个分区 -->
       <template v-if="newsParsed">
-        <NDescriptions label-placement="left" :column="1" size="small" bordered class="mb-12px">
-          <NDescriptionsItem :label="$t('page.aiAnalysis.summaryLabel')">
-            {{ newsParsed.summary ?? '-' }}
-          </NDescriptionsItem>
-        </NDescriptions>
-        <div
+        <AnalysisSection
           v-for="section in (['macro_industry_news', 'stock_news'] as const)"
           :key="section"
-          class="mb-12px"
+          :title="
+            $t(section === 'macro_industry_news' ? 'page.aiAnalysis.macroNewsLabel' : 'page.aiAnalysis.stockNewsLabel')
+          "
         >
-          <NText class="mb-4px block text-13px font-500">
-            {{ $t(section === 'macro_industry_news' ? 'page.aiAnalysis.macroNewsLabel' : 'page.aiAnalysis.stockNewsLabel') }}
-          </NText>
           <div class="flex flex-col gap-6px">
             <div
               v-for="(item, idx) in newsParsed[section] ?? []"
@@ -654,30 +662,33 @@ onBeforeUnmount(stopPoll);
               :description="$t('page.aiAnalysis.newsSectionEmpty')"
             />
           </div>
-        </div>
+        </AnalysisSection>
       </template>
 
-      <!-- 明日研判 -->
-      <div v-if="tomorrowOutlook" class="mb-12px flex items-center gap-8px rounded-6px border border-primary-200 px-12px py-8px dark:border-primary-800">
-        <NText class="shrink-0 text-13px font-500">{{ $t(outlookLabelKey) }}</NText>
+      <!-- 明日研判/今日展望 -->
+      <div
+        v-if="tomorrowOutlook"
+        class="mt-14px flex items-center gap-8px rounded-8px border border-primary-200 py-8px pl-10px pr-12px dark:border-primary-800"
+      >
+        <span class="h-14px w-3px shrink-0 rounded-2px bg-primary" />
+        <NText class="shrink-0 text-13px font-600">{{ $t(outlookLabelKey) }}</NText>
         <NTag size="small" :type="tomorrowType(tomorrowOutlook.direction)" :bordered="false">
           {{ tomorrowOutlook.direction || '-' }}
         </NTag>
-        <NText class="text-13px" depth="2">{{ tomorrowOutlook.summary || '' }}</NText>
+        <NText depth="2" class="text-13px leading-22px">{{ tomorrowOutlook.summary || '' }}</NText>
       </div>
 
       <!-- 核心观察 -->
-      <div v-if="keyPoints.length" class="mb-12px">
-        <NText class="mb-4px block text-13px font-500">{{ $t('page.aiAnalysis.keyPointsLabel') }}</NText>
+      <AnalysisSection v-if="keyPoints.length" :title="$t('page.aiAnalysis.keyPointsLabel')">
         <ul class="m-0 pl-20px">
           <li v-for="(point, idx) in keyPoints" :key="idx" class="text-13px leading-22px">
             {{ point }}
           </li>
         </ul>
-      </div>
+      </AnalysisSection>
 
       <!-- markdown 报告正文 -->
-      <div class="analysis-markdown text-13px" v-html="renderedMarkdown" />
+      <AnalysisMarkdown class="mt-14px block" :raw="current.ai_raw_response" />
       <div class="mt-8px flex justify-end">
         <NText depth="3" class="text-12px">
           {{ $t('page.aiAnalysis.execTime') }}:
@@ -687,45 +698,52 @@ onBeforeUnmount(stopPoll);
     </template>
 
     <!-- 无记录 -->
-    <NEmpty v-else class="py-48px" :description="$t('page.aiAnalysis.emptyTip')" />
+    <AnalysisStatusView v-else status="empty" />
 
     <!-- 分析策略配置抽屉 -->
     <NDrawer v-model:show="strategyVisible" :width="480">
       <NDrawerContent :title="$t(strategyTitleKey)" closable :native-scrollbar="false">
-        <NForm label-placement="top" :show-feedback="false">
-          <NFormItem v-if="!isNewsType" :label="$t(outlookSwitchLabelKey)">
-            <NSpace align="center" :size="12">
-              <NSwitch v-model:value="strategyForm.include_tomorrow" />
-              <NText depth="3" class="text-12px">{{ $t(outlookSwitchTipKey) }}</NText>
-            </NSpace>
-          </NFormItem>
-          <NFormItem class="mt-16px" :label="$t('page.aiAnalysis.strategyPromptLabel')">
-            <NInput
-              v-model:value="strategyForm.prompt_template"
-              type="textarea"
-              :rows="6"
-              :loading="strategyLoading"
-              :placeholder="$t(strategyPromptPlaceholderKey)"
-            />
-          </NFormItem>
-          <NFormItem
-            v-if="strategyForm.include_tomorrow && !isNewsType"
-            class="mt-16px"
-            :label="$t(outlookPromptLabelKey)"
-          >
-            <NInput
-              v-model:value="strategyForm.tomorrow_prompt_template"
-              type="textarea"
-              :rows="6"
-              :loading="strategyLoading"
-              :placeholder="$t(outlookPromptPlaceholderKey)"
-            />
-          </NFormItem>
-        </NForm>
-        <NText depth="3" class="text-12px">
-          {{ $t('page.aiAnalysis.newsInjectTip') }}
-        </NText>
-        <NText depth="3" class="mt-4px block text-12px">
+        <!-- 研判设置 -->
+        <AnalysisSection v-if="!isNewsType" :title="$t(outlookSwitchLabelKey)">
+          <NSpace align="center" :size="12">
+            <NSwitch v-model:value="strategyForm.include_tomorrow" />
+            <NText depth="3" class="text-12px">{{ $t(outlookSwitchTipKey) }}</NText>
+          </NSpace>
+        </AnalysisSection>
+
+        <!-- 策略提示词 -->
+        <AnalysisSection :title="$t('page.aiAnalysis.strategyPromptLabel')">
+          <NInput
+            v-model:value="strategyForm.prompt_template"
+            type="textarea"
+            :rows="6"
+            :maxlength="2000"
+            show-count
+            :loading="strategyLoading"
+            :placeholder="$t(strategyPromptPlaceholderKey)"
+          />
+          <NText depth="3" class="mt-6px block text-12px">
+            {{ $t('page.aiAnalysis.newsInjectTip') }}
+          </NText>
+        </AnalysisSection>
+
+        <!-- 研判提示词 -->
+        <AnalysisSection
+          v-if="strategyForm.include_tomorrow && !isNewsType"
+          :title="$t(outlookPromptLabelKey)"
+        >
+          <NInput
+            v-model:value="strategyForm.tomorrow_prompt_template"
+            type="textarea"
+            :rows="6"
+            :maxlength="2000"
+            show-count
+            :loading="strategyLoading"
+            :placeholder="$t(outlookPromptPlaceholderKey)"
+          />
+        </AnalysisSection>
+
+        <NText depth="3" class="mt-8px block text-12px">
           {{ $t('page.aiAnalysis.strategyEffectTip') }}
         </NText>
         <template #footer>
@@ -759,40 +777,3 @@ onBeforeUnmount(stopPoll);
     </NDrawer>
   </NCard>
 </template>
-
-<style scoped>
-.analysis-markdown :deep(h2) {
-  margin: 14px 0 8px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.analysis-markdown :deep(h3) {
-  margin: 10px 0 6px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.analysis-markdown :deep(p) {
-  margin: 6px 0;
-  line-height: 22px;
-}
-.analysis-markdown :deep(ul),
-.analysis-markdown :deep(ol) {
-  margin: 6px 0;
-  padding-left: 20px;
-}
-.analysis-markdown :deep(li) {
-  line-height: 22px;
-}
-.analysis-markdown :deep(strong) {
-  font-weight: 600;
-}
-.analysis-markdown :deep(table) {
-  border-collapse: collapse;
-  margin: 8px 0;
-}
-.analysis-markdown :deep(th),
-.analysis-markdown :deep(td) {
-  border: 1px solid rgba(128, 128, 128, 0.3);
-  padding: 4px 10px;
-}
-</style>

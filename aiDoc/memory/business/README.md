@@ -10,6 +10,7 @@
 
 ## 需求索引
 
+- [2026-09-03 分析报告排版优化（共享面板+财报页）](./2026-09-03_analysis_report_layout_optimize.md) — 纯视觉重构：新建 4 共享组件（analysis-markdown 唯一 markdown 样式承载/analysis-status-view 三态/analysis-section 竖条区块标题/analysis-summary-card）+ utils `renderAnalysisMarkdown` 去 3 份重复渲染逻辑；报告改摘要卡+竖条区块标题+明日研判主色条，策略抽屉 AnalysisSection 分组+show-count；财报页接入同套组件；坑：重写丢「轮动总结/总评」label 须视觉走查补回、app.d.ts 0024 批 14 键漏同步致基线虚高（补齐 39→24）
 - [2026-09-02 轮动策略优化：主题级聚合+评分重写（军工轮动漏判修复）](./2026-09-02_rotation_strategy_optimize.md) — 单板块独立评分看不见主题级资金集结（军工19兄弟板块95%上涨/位置0.28被埋没）→ THEME_GROUPS 18主题关键词互斥映射，行业+概念合并聚合出 heat+status（gathering集结升温=埋伏首选）；评分重写 rank_pct 分位数统一两类口径、gathering成员≥3 +10/hot中高位-5、资金潜伏型启动、双噪音抑制（微涨幅排名跃减半/板块跌涨停减半）；涨停梯队归一化名∪成分股stock_code跨类目匹配；overview 契约加 themes[]+theme/position_pct，AI prompt 加 theme_heat 字段；坑：算法读时算但服务须重启才生效
 - [2026-09-01 板块轮动策略分析（近期轮动/明日候选/高低切换）](./2026-09-01_rotation_strategy_analysis.md) — 新页 rotation-analysis（菜单8032）双轨制：规则指标（阶段/评分/操作建议/切换信号，读时算不入库）+ AI rotation 类型报告（仅close，板块层推演不点名个股）；新表 business_board_stock_daily（迁移0030）+ push2his 日K回填（all=一个后台任务单锁）；坑：board_code 跟随列表源（东财BK/腾讯pt0）需按名解析东财代码、push2his/push2 IP 级限流断连须每请求逐域名降级重试、回填须跳过当日半日bar、elegant-router transform.ts routeMap 易漏、SFC 动态 i18n 键用 as const+keyof typeof
 - [2026-08-31 行业板块滚动修复 + 领涨股前三名 + 热门个股连板概率](./2026-08-31_board_top3_leading_stocks_limitup_prob.md) — 行业板块页 flex-height 滚动修复；`business_board_daily` 加 `leading_stocks` JSON（迁移 0028），东财源按板块补抓成分涨幅前三（push2 clist，域名降级链 push2→push2delay，并发5+0.1s 限速，腾讯/同花顺兜底单只）；热门个股连板概率=`calc_continuation` 启发式评分（连板高度/封成比/炸板/首封/换手，读时算不入库，封板时间 092500 格式）；i18n 三处同步
