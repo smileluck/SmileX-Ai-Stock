@@ -10,6 +10,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-09-03 机器人主题关键词补全（轮动主题聚合覆盖缺口）](./business/2026-09-03_robot_theme_keyword_expansion.md) — 机器人产业链板块漏网（空心杯电机/工业自动化/自动化设备 theme=None 不参与热度）→ 关键词 6→10（+空心杯电机/丝杠/自动化设备/工业自动化，精确词保互斥不吸轮毂轮边电机）；刻意不收裸"电机"/"传感器"（跨链噪声）；不拆子主题是设计取舍（gathering 集结信号需成员基数）；验证：926 板块新旧映射对比 7→10 无抢板
 - [2026-09-03 轮动策略分析：补齐 AI 分析策略配置](./business/2026-09-03_rotation_analysis_strategy_config.md) — rotation 在 business_analysis_config 无记录（market/sector 均有）致策略抽屉空白；以买方轮动策略分析师视角写主策略（主题-阶段-位置三维+7 条纪律：规则输出只作输入禁照抄/集结信号三要素/位置定打法/涨停验证阶段/切换结构/消息印证/表述规范）+明日推演框架（主攻潜伏双档+产业链联动+概率+回避清单+作废条件），SQL 直接入库即生效（配置读时取，无需重启）
 - [2026-09-03 分析报告排版优化（共享面板+财报页）](./business/2026-09-03_analysis_report_layout_optimize.md) — 纯视觉重构：4 共享组件（analysis-markdown/status-view/section 竖条标题/summary-card）+ utils `renderAnalysisMarkdown` 去 3 份重复；报告改摘要卡+区块标题+研判主色条、策略抽屉分组+show-count；财报页同套接入；坑：重写丢「轮动总结/总评」label 靠视觉走查补回、app.d.ts 0024 批 14 键漏同步致 typecheck 基线虚高（39→24）
 - [2026-09-02 轮动策略优化：主题级聚合+评分重写（军工轮动漏判修复）](./business/2026-09-02_rotation_strategy_optimize.md) — 单板块独立评分看不见主题级资金集结 → THEME_GROUPS 18 主题关键词互斥映射，行业+概念合并聚合 heat/status（gathering 集结升温=埋伏首选）；评分改 rank_pct 分位数 + gathering 成员加分/hot 中高位减分 + 双噪音抑制；overview 契约加 themes[] 与 theme/position_pct，AI prompt 加 theme_heat；坑：算法读时算但服务须重启才生效
