@@ -178,6 +178,12 @@ def _tomorrow_score(f: dict, theme: dict | None) -> int:
     - 资金连续性：净流入连续 >=5日+12 / 4日+9 / 3日+6（连续流入=机构集结）
     - 涨停梯队：近3日 >=3家+10 / 2家+5
     - 量比：1-3 健康放量 +5；>4 过热 -5
+    - 换手热度：换手率相对5日均值温和放大(1-2倍)+4；剧烈放大(>3倍)且位置
+      >=60分位 -4（过热兑现）
+    - 板块宽度：上涨家数占比 >=0.7 +5（普涨共振）；当日上涨但占比 <=0.3 -5
+      （指数虚涨/严重分化）
+    - 资金趋势：近3日净流入较前3日加速 +5；连续流入但趋势衰竭 -5
+    - 动量加速度：动能集中近3日且非高位 +3；高位减速 -3
     - 阶段：退潮 -20
     - 主题热度：所属主题集结升温（多板块同动且低位）+10，成员净流入占比>=0.55
       再+4；主题高位过热时中高位成员 -5（补涨兑现风险）
@@ -216,6 +222,33 @@ def _tomorrow_score(f: dict, theme: dict | None) -> int:
             score += 5
         elif vr > 4:
             score -= 5
+    tr = f.get("turnover_ratio")
+    if tr is not None:
+        if 1 <= tr <= 2:
+            score += 4
+        elif tr > 3 and (pos is None or pos >= 0.6):
+            # 换手率剧烈放大的中高位板块多为过热兑现
+            score -= 4
+    br = f.get("breadth")
+    if br is not None:
+        if br >= 0.7:
+            score += 5
+        elif br <= 0.3 and (f.get("change_pct") or 0) > 0:
+            # 板块指数上涨但上涨家数极少 = 少数权重拉升的虚涨
+            score -= 5
+    it = f.get("inflow_trend")
+    if it is not None:
+        if it > 0:
+            score += 5
+        elif (f.get("inflow_days") or 0) >= 3:
+            # 仍在净流入但强度较前3日衰竭，连续性打折扣
+            score -= 5
+    ma = f.get("momentum_accel")
+    if ma is not None:
+        if ma > 0 and (pos is None or pos < 0.6):
+            score += 3
+        elif ma < 0 and pos is not None and pos >= 0.85:
+            score -= 3
     if f.get("stage") == "ebb":
         score -= 20
     t = theme or {}
@@ -695,7 +728,8 @@ class RotationService:
         series: dict[str, dict[date, BusinessBoardDaily]],
         lu_index: dict,
     ) -> list[dict]:
-        """板块因子计算（读时算）：涨幅/排名(含3日)/位置/量比/资金/涨停梯队/主题归属"""
+        """板块因子计算（读时算）：涨幅/排名(含3日)/位置/量比/换手热度/板块宽度/
+        资金(连续性+趋势)/涨停梯队/动量加速度/主题归属"""
         by_date: dict[date, dict[str, float]] = {}
         for code, day_map in series.items():
             for d, row in day_map.items():
@@ -735,6 +769,15 @@ class RotationService:
             hits.update(lu_index["by_board"].get(board_code, {}))
             return len(hits), max(hits.values(), default=0)
 
+        def _inflow_sum(day_map: dict, window: list[date]) -> float | None:
+            """窗口内主力净流入合计：有效数据不足 2 日时返回 None（不参与评分）"""
+            vals = [
+                v for v in (
+                    _f(day_map[d].net_inflow) for d in window if d in day_map
+                ) if v is not None
+            ]
+            return sum(vals) if len(vals) >= 2 else None
+
         factors: list[dict] = []
         for code, day_map in series.items():
             if snapshot_date not in day_map:
@@ -773,6 +816,41 @@ class RotationService:
                 else:
                     break
 
+            # 换手热度：今日换手率相对近5日均值的倍数
+            prev_turnover_rates = [
+                v for v in (
+                    _f(day_map[d].turnover_rate) for d in dates[1:6] if d in day_map
+                ) if v is not None
+            ]
+            turnover_rate = _f(today_row.turnover_rate)
+            turnover_ratio = None
+            if turnover_rate is not None and len(prev_turnover_rates) >= 3:
+                mean_tr = sum(prev_turnover_rates) / len(prev_turnover_rates)
+                if mean_tr > 0:
+                    turnover_ratio = round(turnover_rate / mean_tr, 2)
+
+            # 板块宽度：上涨家数占比（普涨共振 vs 指数虚涨）
+            breadth = None
+            rising, falling = today_row.rising_count, today_row.falling_count
+            if rising is not None and falling is not None and (rising + falling) > 0:
+                breadth = round(rising / (rising + falling), 4)
+
+            # 资金趋势加速度：近3日净流入合计 - 再前3日合计（加速流入 / 流入衰竭）
+            recent_inflow = _inflow_sum(day_map, dates[:3])
+            prev_inflow = _inflow_sum(day_map, dates[3:6])
+            inflow_trend = None
+            if recent_inflow is not None and prev_inflow is not None:
+                inflow_trend = round(recent_inflow - prev_inflow, 2)
+
+            # 动量加速度：近3日复合涨幅 - 前7日复合涨幅（动能是否集中于近期）
+            gain_prev = _compound_gain([
+                _f(day_map[d].change_pct) if d in day_map else None
+                for d in dates[3:10]
+            ])
+            momentum_accel = None
+            if gain_3d is not None and gain_prev is not None:
+                momentum_accel = round(gain_3d - gain_prev, 2)
+
             limit_up_count, max_consecutive = _match_limit_up(code, today_row.board_name)
 
             position_pct = None
@@ -794,6 +872,11 @@ class RotationService:
                 "rank_change": rank_change,
                 "rank_change_3d": rank_change_3d,
                 "volume_ratio": volume_ratio,
+                "turnover_rate": turnover_rate,
+                "turnover_ratio": turnover_ratio,
+                "breadth": breadth,
+                "inflow_trend": inflow_trend,
+                "momentum_accel": momentum_accel,
                 "net_inflow": _f(today_row.net_inflow),
                 "inflow_days": inflow_days,
                 "limit_up_count": limit_up_count,
