@@ -66,6 +66,17 @@ _NEWS_ANALYSIS_WEEKLY_LIMIT = 120
 # 后台任务强引用集合（防止 asyncio.Task 被 GC），完成后自动移除
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
 
+# 输出语言强约束：_build_system_prompt 对所有报告类型统一追加，
+# 防止英文枚举码/英文术语混入中文报告
+_CHINESE_OUTPUT_RULE = (
+    "\n语言要求（强制）：markdown 正文与 JSON 中的文本字段一律使用简体中文；"
+    "阶段/状态/操作建议等术语必须写中文（如「发酵」「集结升温」「主攻」），"
+    "禁止出现 ferment/gathering/attack 等英文枚举码；"
+    "仅允许 PE/ROE/EPS/CPI/PPI/M1/M2 等通用金融缩写；"
+    "JSON 枚举字段（stage/status/board_type 等）仅供程序解析，"
+    "其英文码禁止出现在正文与文本字段中。\n"
+)
+
 # ------------------------------------------------------------------
 # 系统提示词：要求 LLM 先输出 JSON 摘要（```json 代码块），再输出 markdown 报告；
 # 明日研判章节按配置动态追加
@@ -167,7 +178,7 @@ _ROTATION_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 轮动策略分
 
 字段口径：stage-轮动阶段（start-低位启动/ferment-发酵/climax-高潮/ebb-退潮/observe-蓄势观察）；action-规则建议（attack-主攻/ambush-潜伏埋伏/avoid-回避/watch-观察）；signal-切换信号（switching-高低切换/split-分歧/resonance-共振/unknown-数据不足）；tomorrow_score-明日候选评分 0-100；theme-所属主题；position_pct-近10日涨幅位置分位（低=低位）；主题 status（gathering-集结升温/active-发酵走强/hot-高位过热/cooling-退潮/flat-平静）。
 
-核心研判逻辑：轮动以主题为单位展开。单一板块异动可能是噪声，但同主题多板块齐动（rising_ratio_3d 高）且整体位置低（avg_position_pct 低）、资金持续净流入，就是资金集结信号——集结升温（gathering）主题是提前埋伏的首选；高位过热（hot）主题的中高位成员需警惕补涨兑现。
+核心研判逻辑：轮动以主题为单位展开。单一板块异动可能是噪声，但同主题多板块齐动（rising_ratio_3d 高）且整体位置低（avg_position_pct 低）、资金持续净流入，就是资金集结信号——集结升温主题是提前埋伏的首选；高位过热主题的中高位成员需警惕补涨兑现。
 
 输出要求（严格按以下顺序，两部分缺一不可）：
 1. 先输出一个 JSON 对象（包在 ```json 代码块中）：
@@ -228,7 +239,7 @@ _ROTATION_TOMORROW_SECTION = """
 ## 明日轮动推演（必须包含，按专业研判框架输出）
 1. **候选板块梯队**：给出「主攻」与「潜伏埋伏」两档候选板块（可引用规则引擎的 tomorrow_score 与 action，但须给出独立判断），每档 2-3 个板块并写明：
    - 推荐逻辑：位置高低（近10日涨幅位置）、资金连续性、涨停梯队支撑
-   - 主题维度：集结升温（gathering）主题的成员板块优先作为潜伏候选；高位过热（hot）主题的中高位成员规避追涨
+   - 主题维度：集结升温主题的成员板块优先作为潜伏候选；高位过热主题的中高位成员规避追涨
    - 触发条件：明日竞价即可观察的确认信号（板块高开幅度、龙头竞价溢价、量能水平）
    - 概率倾向：该板块如期走强的主观概率
 2. **产业链联动推演**：若上游/主链板块已启动，推演中下游低位补涨方向（如算力涨→液冷/铜连接，锂矿涨→电池/整车），写明联动传导的观察信号
@@ -416,8 +427,8 @@ def _build_system_prompt(analysis_type: str, session: str, include_tomorrow: boo
     if analysis_type == "news":
         # 资讯分析：morning/weekly 两套提示词，不追加研判章节（明日展望融入要点）
         return (
-            _NEWS_WEEKLY_SYSTEM_PROMPT if session == "weekly"
-            else _NEWS_MORNING_SYSTEM_PROMPT
+            (_NEWS_WEEKLY_SYSTEM_PROMPT if session == "weekly"
+             else _NEWS_MORNING_SYSTEM_PROMPT) + _CHINESE_OUTPUT_RULE
         )
     if analysis_type == "market":
         if session == "morning":
@@ -443,7 +454,7 @@ def _build_system_prompt(analysis_type: str, session: str, include_tomorrow: boo
             f"\n当前未开启「{section_title}」，报告中不要出现对{'今日' if session == 'morning' else '明日'}走势的专门预判章节，"
             "JSON 中也不要输出 tomorrow_outlook 字段。\n"
         )
-    return prompt
+    return prompt + _CHINESE_OUTPUT_RULE
 
 
 def _extract_json_object(text: str) -> Optional[dict]:
@@ -467,6 +478,39 @@ def _extract_json_object(text: str) -> Optional[dict]:
         except json.JSONDecodeError:
             continue
     return None
+
+
+# LLM 正文兜底中文化：已知英文枚举码 → 中文术语
+# （轮动 stage/action/signal、主题 status、board_type，与前端配色映射同源）
+_ENUM_ZH_MAP = {
+    "start": "低位启动", "ferment": "发酵", "climax": "高潮",
+    "ebb": "退潮", "observe": "蓄势观察",
+    "attack": "主攻", "ambush": "潜伏埋伏", "avoid": "回避", "watch": "观察",
+    "switching": "高低切换", "split": "分歧", "resonance": "共振", "unknown": "数据不足",
+    "gathering": "集结升温", "active": "发酵走强", "hot": "高位过热",
+    "cooling": "退潮", "flat": "平静",
+    "industry": "行业", "concept": "概念",
+}
+_ENUM_ZH_PATTERN = re.compile(
+    r"\b(" + "|".join(sorted(_ENUM_ZH_MAP, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_report_language(text: str) -> str:
+    """LLM 正文兜底中文化：markdown 部分的已知英文枚举码替换为中文术语。
+
+    开头的 ```json 代码块保持原样——枚举字段值供前端程序解析/tag 配色，
+    只替换正文与文本字段中误混入的英文码。
+    """
+    if not text:
+        return text
+    m = re.match(r"\s*```(?:json)?\s*\{.*?\}\s*```", text, re.DOTALL)
+    head, body = (m.group(0), text[m.end():]) if m else ("", text)
+    body = _ENUM_ZH_PATTERN.sub(
+        lambda mm: _ENUM_ZH_MAP[mm.group(1).lower()], body
+    )
+    return head + body
 
 
 def _dump_rows(items: list, fields: list[str]) -> list[dict]:
@@ -1028,6 +1072,7 @@ class AnalysisExecutor:
             raw_text = await _run_llm(
                 db, analysis_type, system_prompt, _compose_user_prompt(False),
             )
+        raw_text = _sanitize_report_language(raw_text)
         run.ai_raw_response = raw_text[:20000]
 
         # 4. 解析 JSON 摘要（失败不影响报告本身，仅摘要为空；
