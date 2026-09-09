@@ -10,6 +10,7 @@
 
 ## 需求索引
 
+- [2026-09-08 策略分析偶发失败修复（think 块干扰 JSON 解析）](./2026-09-08_strategy_think_block_parse_fix.md) — 「有些策略不执行」实为随机 run 失败：STOCK_PICKING 未绑模型回退 MiniMax-M3 思考模型，英文 `<think>` 块含方括号被「第一个[到最后一个]」截取逻辑混入 → `_extract_json_array` 解析前先剥 think 块 + 原文解析前独立 commit（修外层 rollback 丢证据的伴生 bug）+ 解析失败降级重试一次；调度链路排查无问题
 - [2026-09-08 分析报告中文统一 + 轮动策略热度/趋势权重](./2026-09-08_report_chinese_unify_and_rotation_heat_trend.md) — 报告夹杂英文根因=轮动 prompt/注入数据含英文枚举码被 LLM 抄进正文：`_CHINESE_OUTPUT_RULE` 对 7 类 prompt 统一追加强约束 + `_sanitize_report_language` 落库前兜底替换（跳过 ```json 块保前端 tag 配色）；轮动评分加 4 因子（换手率倍数/上涨家数占比 breadth/近3日 vs 前3日净流入趋势/近3日 vs 前7日动量加速度），全用 business_board_daily 存量字段无迁移；坑：换手率仅东财/腾讯源有（缺失 None 不计分）、算法读时算须重启生效
 - [2026-09-03 机器人主题关键词补全（轮动主题聚合覆盖缺口）](./2026-09-03_robot_theme_keyword_expansion.md) — 机器人产业链板块漏网（空心杯电机/工业自动化/自动化设备 theme=None 不参与热度）→ 关键词 6→10（+空心杯电机/丝杠/自动化设备/工业自动化，精确词保互斥不吸轮毂轮边电机）；刻意不收裸"电机"/"传感器"（跨链噪声）；不拆子主题是设计取舍（gathering 集结信号需成员基数）；验证：926 板块新旧映射对比 7→10 无抢板
 - [2026-09-03 轮动策略分析：补齐 AI 分析策略配置](./2026-09-03_rotation_analysis_strategy_config.md) — rotation 在 business_analysis_config 无记录（market/sector 均有）致策略抽屉空白；以买方轮动策略分析师视角写主策略（主题-阶段-位置三维+7 条纪律：规则输出只作输入禁照抄/集结信号三要素/位置定打法/涨停验证阶段/切换结构/消息印证/表述规范）+明日推演框架（主攻潜伏双档+产业链联动+概率+回避清单+作废条件），SQL 直接入库即生效（配置读时取，无需重启）

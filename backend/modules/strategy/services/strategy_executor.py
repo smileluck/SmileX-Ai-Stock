@@ -88,9 +88,12 @@ SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 策略分析师，负责�
 
 
 def _extract_json_array(text: str) -> list[dict]:
-    """从 LLM 回复中提取 JSON 数组（容忍 ```json 代码块 / 前后杂文）"""
+    """从 LLM 回复中提取 JSON 数组（容忍 <think> 思考块 / ```json 代码块 / 前后杂文）"""
     if not text:
         return []
+    # 思考模型（如 MiniMax-M3）的英文思考块常含方括号，先剥离再提取，
+    # 否则"第一个 [ 到最后一个 ]"会混入思考文字导致解析失败
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     # 优先取 ```json ... ``` 代码块
     m = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, re.DOTALL)
     candidates = []
@@ -413,7 +416,7 @@ class StrategyExecutor:
                 logger.warning("策略分析实时行情拉取失败: strategy=%s", strategy.name, exc_info=True)
                 realtime_quotes = {}
 
-        # 3. LLM 分析
+        # 3. LLM 分析（原文独立提交落库：后续解析失败时外层 rollback 不会丢排查证据）
         user_prompt = _build_user_prompt(
             strategy, holdings, EXECUTE_PERIOD_NAMES.get(run_period, run_period),
             realtime_quotes=realtime_quotes,
@@ -421,9 +424,20 @@ class StrategyExecutor:
         )
         raw_text = await _run_llm(db, user_prompt)
         run.ai_raw_response = raw_text[:20000]
+        await db.commit()
 
-        # 4. 解析信号
-        raw_signals = _extract_json_array(raw_text)
+        # 4. 解析信号（思考模型偶发响应截断/格式偏差，解析失败降级重试一次）
+        try:
+            raw_signals = _extract_json_array(raw_text)
+        except ValueError:
+            logger.warning(
+                "策略信号解析失败，降级重试一次: strategy=%s run_id=%s",
+                strategy.name, run_id,
+            )
+            raw_text = await _run_llm(db, user_prompt)
+            run.ai_raw_response = raw_text[:20000]
+            await db.commit()
+            raw_signals = _extract_json_array(raw_text)
         signals = [s for s in (_to_signal(r) for r in raw_signals if isinstance(r, dict)) if s]
         run.parsed_signals = [s.model_dump() for s in signals]
 

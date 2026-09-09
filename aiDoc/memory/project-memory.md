@@ -10,6 +10,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-09-08 策略分析偶发失败修复（think 块干扰 JSON 解析）](./business/2026-09-08_strategy_think_block_parse_fix.md) — MiniMax-M3 思考模型的英文 `<think>` 块含方括号致信号 JSON 截取解析失败（随机命中策略）；修复=解析前剥 think 块 + 原文独立落库 + 失败重试一次
 - [2026-09-08 分析报告中文统一 + 轮动策略热度/趋势权重](./business/2026-09-08_report_chinese_unify_and_rotation_heat_trend.md) — 报告英文根因=轮动 prompt/注入数据的英文枚举码被 LLM 带入正文：7 类 prompt 统一追加 `_CHINESE_OUTPUT_RULE` 强约束 + 落库前 `_sanitize_report_language` 兜底替换（跳过 ```json 块保前端配色）；轮动评分新增换手率倍数/板块宽度/资金趋势/动量加速度 4 因子（存量数据，无迁移，须重启生效）
 - [2026-09-03 机器人主题关键词补全（轮动主题聚合覆盖缺口）](./business/2026-09-03_robot_theme_keyword_expansion.md) — 机器人产业链板块漏网（空心杯电机/工业自动化/自动化设备 theme=None 不参与热度）→ 关键词 6→10（+空心杯电机/丝杠/自动化设备/工业自动化，精确词保互斥不吸轮毂轮边电机）；刻意不收裸"电机"/"传感器"（跨链噪声）；不拆子主题是设计取舍（gathering 集结信号需成员基数）；验证：926 板块新旧映射对比 7→10 无抢板
 - [2026-09-03 轮动策略分析：补齐 AI 分析策略配置](./business/2026-09-03_rotation_analysis_strategy_config.md) — rotation 在 business_analysis_config 无记录（market/sector 均有）致策略抽屉空白；以买方轮动策略分析师视角写主策略（主题-阶段-位置三维+7 条纪律：规则输出只作输入禁照抄/集结信号三要素/位置定打法/涨停验证阶段/切换结构/消息印证/表述规范）+明日推演框架（主攻潜伏双档+产业链联动+概率+回避清单+作废条件），SQL 直接入库即生效（配置读时取，无需重启）
