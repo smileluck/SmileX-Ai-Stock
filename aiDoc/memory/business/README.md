@@ -10,6 +10,7 @@
 
 ## 需求索引
 
+- [2026-09-09 长期资讯采集标记 + AI 分析加权](./2026-09-09_news_long_term_tagging.md) — 厄尔尼诺类长周期事件此前随 24h/7d 时间窗消失：新增 `news_tagger.py` 关键词打标（标题命中即标/摘要需≥2词，标签复用轮动 THEME_GROUPS 口径），`business_news.long_term_tags`（迁移0031）+ 入库打标 + 近90天存量回填脚本（首跑命中 5957/179175）；`analysis_executor` 新增 `_collect_long_term_news` 按标签分组独立成段（每组3条/总20条，「中线背景非当日催化、共振提高权重点明传导链」），四类分析全注入且可随外部内容段摘除降级；坑：url 去重致旧闻不重打标须靠回填、一条多标签资讯在多组重复出现属设计
 - [2026-09-08 策略分析偶发失败修复（think 块干扰 JSON 解析）](./2026-09-08_strategy_think_block_parse_fix.md) — 「有些策略不执行」实为随机 run 失败：STOCK_PICKING 未绑模型回退 MiniMax-M3 思考模型，英文 `<think>` 块含方括号被「第一个[到最后一个]」截取逻辑混入 → `_extract_json_array` 解析前先剥 think 块 + 原文解析前独立 commit（修外层 rollback 丢证据的伴生 bug）+ 解析失败降级重试一次；调度链路排查无问题
 - [2026-09-08 分析报告中文统一 + 轮动策略热度/趋势权重](./2026-09-08_report_chinese_unify_and_rotation_heat_trend.md) — 报告夹杂英文根因=轮动 prompt/注入数据含英文枚举码被 LLM 抄进正文：`_CHINESE_OUTPUT_RULE` 对 7 类 prompt 统一追加强约束 + `_sanitize_report_language` 落库前兜底替换（跳过 ```json 块保前端 tag 配色）；轮动评分加 4 因子（换手率倍数/上涨家数占比 breadth/近3日 vs 前3日净流入趋势/近3日 vs 前7日动量加速度），全用 business_board_daily 存量字段无迁移；坑：换手率仅东财/腾讯源有（缺失 None 不计分）、算法读时算须重启生效
 - [2026-09-03 机器人主题关键词补全（轮动主题聚合覆盖缺口）](./2026-09-03_robot_theme_keyword_expansion.md) — 机器人产业链板块漏网（空心杯电机/工业自动化/自动化设备 theme=None 不参与热度）→ 关键词 6→10（+空心杯电机/丝杠/自动化设备/工业自动化，精确词保互斥不吸轮毂轮边电机）；刻意不收裸"电机"/"传感器"（跨链噪声）；不拆子主题是设计取舍（gathering 集结信号需成员基数）；验证：926 板块新旧映射对比 7→10 无抢板

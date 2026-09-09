@@ -9,7 +9,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Text, Boolean, Integer, DateTime, UniqueConstraint
+from sqlalchemy import String, Text, Boolean, Integer, DateTime, UniqueConstraint, JSON
 from sqlalchemy.orm import mapped_column, Mapped
 
 from database.models.base import Base
@@ -37,6 +37,10 @@ class BusinessNews(Base):
         DateTime(timezone=True), nullable=True, index=True, comment="发布时间", default=None
     )
     raw_time: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="原始时间字符串", default=None)
+    long_term_tags: Mapped[Optional[list]] = mapped_column(
+        JSON, nullable=True, default=None,
+        comment="长期事件标签（空=短期资讯；标签口径同轮动主题，采集时按关键词规则打标）",
+    )
 
 
 class BusinessNewsSyncLog(Base):

@@ -63,6 +63,11 @@ _NEWS_ANALYSIS_WEEKLY_HOURS = 24 * 7
 _NEWS_ANALYSIS_LIMIT = 60
 _NEWS_ANALYSIS_WEEKLY_LIMIT = 120
 
+# 长期事件线索：采集时按关键词打标（news_tagger），分析注入时按标签分组独立成段
+_LONG_TERM_NEWS_DAYS = 90
+_LONG_TERM_NEWS_PER_TAG = 3
+_LONG_TERM_NEWS_LIMIT = 20
+
 # 后台任务强引用集合（防止 asyncio.Task 被 GC），完成后自动移除
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
 
@@ -136,7 +141,7 @@ _SECTOR_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 板块分析师�
 2. 再输出完整的 markdown 分析报告，结构建议：
    ## 行业板块表现（领涨行业解读）
    ## 概念题材动向（热点题材梳理）
-   ## 消息面与板块印证（当日资讯利好/利空与板块表现的印证或背离，纯消息脉冲须标注）
+   ## 消息面与板块印证（当日资讯利好/利空与板块表现的印证或背离，纯消息脉冲须标注；长期事件线索与当日板块共振时须点出传导链）
    ## 资金主线（主力净流入方向与持续性判断）
    ## 轮动展望（后市关注方向）
 
@@ -226,7 +231,7 @@ _ROTATION_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 轮动策略分
 ```
 2. 再输出完整的 markdown 分析报告，结构建议：
    ## 近期轮动复盘（主线演化路径：哪些板块接力/退潮，与规则指标印证）
-   ## 主题热度与资金集结（集结升温主题为埋伏首选，高位过热主题提示兑现风险）
+   ## 主题热度与资金集结（集结升温主题为埋伏首选，高位过热主题提示兑现风险；长期事件线索影响的主题须说明持续性加成）
    ## 资金与涨停梯队（净流入连续性与连板高度对轮动阶段的验证）
    ## 板块内高低切换（规则信号解读：高位滞涨与低位启动的资金含义）
    ## 明日轮动推演（主攻/潜伏两档候选板块 + 每档的竞价确认信号）
@@ -375,6 +380,7 @@ _NEWS_MORNING_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 资讯分�
    ## 资讯面总览（消息面整体倾向）
    ## 宏观与行业资讯解读（分类点评，与宏观指数最新读数相互印证）
    ## 个股资讯解读（重点公司事件与影响）
+   ## 长期事件跟踪（长期线索的演化与受影响板块映射，无新进展简要带过）
    ## 今日观察要点（值得跟踪的发酵线索与风险提示）
 
 筛选纪律：相似资讯必须合并为一条；与A股关联弱、纯情绪化的资讯直接忽略；两组各严格不超过 10 条。
@@ -415,6 +421,7 @@ _NEWS_WEEKLY_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 资讯分析
    ## 本周资讯面复盘（消息面主线梳理）
    ## 宏观与行业要闻解读（政策与产业趋势，结合宏观指数变化）
    ## 个股要闻解读（本周重点公司事件与后续演化）
+   ## 长期事件复盘（本周各长期线索的演化、板块映射与后续观察点）
    ## 下周展望（值得跟踪的线索、事件日历与风险提示）
 
 筛选纪律：同类资讯按时间线合并为一条演化脉络；与A股关联弱的忽略；两组各严格不超过 10 条。
@@ -557,6 +564,67 @@ async def _collect_recent_news(
         f"近 {hours} 小时重点财经资讯（共 {len(lines)} 条，先按影响力分级"
         "（宏观政策/央行动向 > 行业产业政策 > 个股与突发事件），"
         "相似资讯合并解读、与市场关联弱的忽略，评估影响时必须引用原文）：\n" + "\n".join(lines)
+    )
+
+
+async def _collect_long_term_news(db: AsyncSession) -> str:
+    """长期事件线索收集：近 N 天带长期标签的资讯按标签分组（每组取最新 M 条），
+    与当日快讯分开加权——中线背景而非当日催化。无标签资讯时返回空串（不阻塞分析）"""
+    from datetime import timedelta
+
+    from database.models.business.news import BusinessNews
+
+    since = timezone.now() - timedelta(days=_LONG_TERM_NEWS_DAYS)
+    result = await db.execute(
+        select(BusinessNews)
+        .where(
+            BusinessNews.published_at >= since,
+            BusinessNews.long_term_tags.isnot(None),
+            BusinessNews.deleted_at.is_(None),
+        )
+        .order_by(BusinessNews.published_at.desc())
+        .limit(500)
+    )
+    rows = result.scalars().all()
+    if not rows:
+        return ""
+
+    # 按标签分组（一条多标签归入各组），每组取最新 N 条
+    by_tag: dict[str, list] = {}
+    for n in rows:
+        for tag in n.long_term_tags or []:
+            bucket = by_tag.setdefault(tag, [])
+            if len(bucket) < _LONG_TERM_NEWS_PER_TAG:
+                bucket.append(n)
+
+    # 组按最新条目时间倒序，总量收敛到上限
+    groups = sorted(
+        by_tag.items(),
+        key=lambda kv: max(
+            (n.published_at for n in kv[1] if n.published_at), default=since
+        ),
+        reverse=True,
+    )
+    blocks, count = [], 0
+    for tag, items in groups:
+        lines = []
+        for n in items:
+            if count >= _LONG_TERM_NEWS_LIMIT:
+                break
+            ts = n.published_at.strftime("%m-%d") if n.published_at else ""
+            lines.append(f"- [{ts}] {n.title}（{n.source_name}）")
+            count += 1
+        if lines:
+            blocks.append(f"【{tag}】\n" + "\n".join(lines))
+        if count >= _LONG_TERM_NEWS_LIMIT:
+            break
+    if not blocks:
+        return ""
+    return (
+        f"长期事件线索（近 {_LONG_TERM_NEWS_DAYS} 天持续影响的基本面背景，"
+        f"权重独立于当日快讯，按影响标签分组，共 {count} 条）：\n" + "\n\n".join(blocks)
+        + "\n处理要求：作为中线背景而非当日催化；与当日盘面/板块共振时提高权重并点明传导链"
+        "（如厄尔尼诺→农产品/矿产减产→农业牧渔/有色/煤/电）；事件升级或消退时标注演化方向。"
     )
 
 
@@ -1039,6 +1107,14 @@ class AnalysisExecutor:
             except Exception:
                 logger.warning("宏观指数读数获取失败（不影响分析）", exc_info=True)
 
+        # 长期事件线索（厄尔尼诺/减产/关税等跨周月事件）：独立段注入，
+        # 与当日快讯分开加权；同属外部内容，命中审核时可一并摘除降级
+        long_term_prompt = ""
+        try:
+            long_term_prompt = await _collect_long_term_news(db)
+        except Exception:
+            logger.warning("长期事件线索获取失败（不影响分析）", exc_info=True)
+
         # 3. LLM 生成（系统提示词按时段/研判开关动态拼装）；
         #    资讯/宏观段放最前（行情数据 prompt 以"请基于以上真实数据输出…"收尾）
         system_prompt = _build_system_prompt(analysis_type, session, config.include_tomorrow)
@@ -1053,6 +1129,8 @@ class AnalysisExecutor:
                 )
             if with_news and macro_prompt:
                 segments.append(macro_prompt)
+            if with_news and long_term_prompt:
+                segments.append(long_term_prompt)
             segments.append(data_prompt)
             return _build_user_prompt(analysis_type, "\n\n".join(segments), config)
 
@@ -1061,7 +1139,7 @@ class AnalysisExecutor:
                 db, analysis_type, system_prompt, _compose_user_prompt(True),
             )
         except Exception:
-            if not news_prompt and not macro_prompt:
+            if not news_prompt and not macro_prompt and not long_term_prompt:
                 raise
             # 资讯/宏观为外部抓取内容，可能命中 LLM 输入内容审核（如 MiniMax 敏感词 422）
             # 导致整单失败；摘除外部内容段降级重试一次，保证基于行情数据的报告仍能生成
