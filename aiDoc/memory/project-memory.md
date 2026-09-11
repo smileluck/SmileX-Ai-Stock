@@ -10,6 +10,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-09-11 报告英文残留根治（sanitize 双 bug + 历史修复）](./business/2026-09-11_report_english_residual_fix.md) — think 块致 json 保护失效 + `\b` 边界对中英粘连失效；修复为剥 think + ASCII 环视边界 + 字段名映射扩充；修复脚本恢复 14 个历史 run 枚举码（JSONB 须 deepcopy 重赋值）
 - [2026-09-09 长期资讯采集标记 + AI 分析加权](./business/2026-09-09_news_long_term_tagging.md) — 新增 news_tagger 关键词打标（标签复用轮动主题口径）+ `business_news.long_term_tags`（迁移0031）+ 存量回填；分析侧 `_collect_long_term_news` 按标签分组独立成段注入四类分析，中线背景权重 + 共振点明传导链
 - [2026-09-08 策略分析偶发失败修复（think 块干扰 JSON 解析）](./business/2026-09-08_strategy_think_block_parse_fix.md) — MiniMax-M3 思考模型的英文 `<think>` 块含方括号致信号 JSON 截取解析失败（随机命中策略）；修复=解析前剥 think 块 + 原文独立落库 + 失败重试一次
 - [2026-09-08 分析报告中文统一 + 轮动策略热度/趋势权重](./business/2026-09-08_report_chinese_unify_and_rotation_heat_trend.md) — 报告英文根因=轮动 prompt/注入数据的英文枚举码被 LLM 带入正文：7 类 prompt 统一追加 `_CHINESE_OUTPUT_RULE` 强约束 + 落库前 `_sanitize_report_language` 兜底替换（跳过 ```json 块保前端配色）；轮动评分新增换手率倍数/板块宽度/资金趋势/动量加速度 4 因子（存量数据，无迁移，须重启生效）

@@ -497,27 +497,47 @@ _ENUM_ZH_MAP = {
     "gathering": "集结升温", "active": "发酵走强", "hot": "高位过热",
     "cooling": "退潮", "flat": "平静",
     "industry": "行业", "concept": "概念",
+    # 注入数据的英文字段名（LLM 引用规则指标时常原样抄进正文）
+    "tomorrow_score": "明日评分", "position_pct": "位置分位", "avg_position_pct": "主题平均位置",
+    "rank_change_3d": "3日排名变化", "rank_change": "排名跃升", "volume_ratio": "量比",
+    "inflow_days": "连续净流入天数", "net_inflow": "主力净流入", "change_pct": "涨跌幅",
+    "gain_3d": "3日涨幅", "gain_5d": "5日涨幅", "gain_10d": "10日涨幅",
+    "rising_ratio_3d": "3日上涨占比", "inflow_ratio": "净流入占比", "member_count": "成员板块数",
+    "limit_up_count": "涨停家数", "max_consecutive": "最高连板",
+    "turnover_ratio": "换手倍数", "inflow_trend": "资金趋势", "momentum_accel": "动量加速度",
+    "breadth": "上涨家数占比",
+    "score": "评分", "heat": "热度", "theme": "主题", "stage": "阶段",
+    "status": "状态", "rank": "排名", "position": "位置",
 }
+# 边界按 ASCII 字母/下划线判定：\b 会把中文字视为单词字符，
+# 导致"高低位split分歧"这类中英粘连写法匹配不到边界而漏替换
 _ENUM_ZH_PATTERN = re.compile(
-    r"\b(" + "|".join(sorted(_ENUM_ZH_MAP, key=len, reverse=True)) + r")\b",
+    r"(?<![A-Za-z_])(" + "|".join(sorted(_ENUM_ZH_MAP, key=len, reverse=True)) + r")(?![A-Za-z_])",
     re.IGNORECASE,
 )
 
 
 def _sanitize_report_language(text: str) -> str:
-    """LLM 正文兜底中文化：markdown 部分的已知英文枚举码替换为中文术语。
+    """LLM 正文兜底中文化：剥 think 思考块 + 正文已知英文码/字段名替换为中文。
 
-    开头的 ```json 代码块保持原样——枚举字段值供前端程序解析/tag 配色，
-    只替换正文与文本字段中误混入的英文码。
+    - <think> 块（MiniMax-M3 等思考模型）整体剔除：既是英文噪声，又防止入库
+      20000 字截断后未闭合块在前端裸露
+    - 首个 ```json 代码块保持原样——枚举字段值供前端程序解析/tag 配色；
+      注意 think 块可能位于 json 块之前，必须先剥 think 再定位 json 块
     """
     if not text:
         return text
-    m = re.match(r"\s*```(?:json)?\s*\{.*?\}\s*```", text, re.DOTALL)
-    head, body = (m.group(0), text[m.end():]) if m else ("", text)
-    body = _ENUM_ZH_PATTERN.sub(
-        lambda mm: _ENUM_ZH_MAP[mm.group(1).lower()], body
-    )
-    return head + body
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL)  # 响应截断导致的未闭合块
+    m = re.search(r"```(?:json)?\s*\{.*?\}\s*```", text, re.DOTALL)
+    head, code, tail = (text[:m.start()], m.group(0), text[m.end():]) if m else (text, "", "")
+
+    def _sub(s: str) -> str:
+        return _ENUM_ZH_PATTERN.sub(
+            lambda mm: _ENUM_ZH_MAP[mm.group(1).lower()], s
+        )
+
+    return _sub(head) + code + _sub(tail)
 
 
 def _dump_rows(items: list, fields: list[str]) -> list[dict]:
