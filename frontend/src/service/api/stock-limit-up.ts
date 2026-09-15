@@ -30,7 +30,7 @@ export function fetchGetLimitUpDates() {
 
 /** manually trigger limit-up sync */
 export function fetchSyncLimitUp() {
-  return request<{ fetched: number; saved: number }>({
+  return request<{ fetched: number; saved: number; broken: number }>({
     url: '/admin/stock/limit-up/sync',
     method: 'post'
   });

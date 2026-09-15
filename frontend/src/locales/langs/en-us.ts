@@ -1308,6 +1308,13 @@ const local: App.I18n.Schema = {
       limitUp: {
         title: 'Limit-up Stocks',
         totalCount: 'Total Limit-up',
+        brokenCount: 'Broken Boards',
+        poolStatus: 'Status',
+        statusSealed: 'Sealed',
+        statusBroken: 'Broken',
+        poolAll: 'All',
+        poolLimitUp: 'Sealed',
+        poolBroken: 'Broken',
         mainCount: 'Main Board',
         chinextCount: 'ChiNext',
         starCount: 'STAR Market',
@@ -1343,7 +1350,7 @@ const local: App.I18n.Schema = {
         star: 'STAR',
         lastRefresh: 'Last Refresh',
         sync: 'Sync Data',
-        syncSuccess: 'Limit-up pool synced',
+        syncSuccess: 'Limit-up/broken pool synced',
         datePlaceholder: 'Select date to view history'
       },
       stockHot: {

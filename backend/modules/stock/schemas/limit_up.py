@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-涨停股池 Schema
+涨停/炸板股池 Schema
 """
 
 from datetime import date
@@ -20,12 +20,13 @@ class ContinuationFactor(BaseEntity):
 
 
 class LimitUpStockItem(BaseEntity):
-    """涨停股单项"""
+    """涨停/炸板股单项"""
 
     id: int
     record_date: date
     stock_code: str
     stock_name: str
+    pool_type: str = Field(..., description="池类型: limit_up=收盘封板 / broken=涨停后炸板未封住")
     market_board: str = Field(..., description="市场板块: main/chinext/star/bse")
     latest_price: float | None = None
     change_pct: float | None = None
@@ -44,10 +45,11 @@ class LimitUpStockItem(BaseEntity):
 
 
 class LimitUpStats(BaseEntity):
-    """当日涨停统计"""
+    """当日涨停统计（total_count 等仅统计封板股，炸板家数单列 broken_count）"""
 
     record_date: date | None = None
     total_count: int = 0
+    broken_count: int = 0
     main_count: int = 0
     chinext_count: int = 0
     star_count: int = 0

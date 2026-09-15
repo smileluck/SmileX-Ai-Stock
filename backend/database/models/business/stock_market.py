@@ -7,7 +7,7 @@ A股行情快照表
 - 大盘资金流日快照
 - 行业/概念板块日快照
 - 板块成分股日快照
-- 涨停股池日快照
+- 涨停/炸板股池日快照
 - 指数成分股快照（BaoStock）
 """
 
@@ -221,15 +221,16 @@ class BusinessBoardStockDaily(Base):
 
 
 class BusinessLimitUpStock(Base):
-    """涨停股池日快照表"""
+    """涨停/炸板股池日快照表（pool_type: limit_up=收盘封板, broken=涨停后炸板未封住）"""
 
     __table_args__ = (
         UniqueConstraint(
             "record_date",
             "stock_code",
-            name="uk_limit_up_daily_date_code",
+            "pool_type",
+            name="uk_limit_up_daily_date_code_type",
         ),
-        {"comment": "涨停股池日快照表"},
+        {"comment": "涨停/炸板股池日快照表"},
     )
 
     record_date: Mapped[date] = mapped_column(
@@ -241,6 +242,13 @@ class BusinessLimitUpStock(Base):
     stock_name: Mapped[str] = mapped_column(String(50), nullable=False, comment="股票名称")
     market_board: Mapped[str] = mapped_column(
         String(20), nullable=False, index=True, comment="市场板块: main/chinext/star/bse"
+    )
+    pool_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+        insert_default="limit_up",
+        comment="池类型: limit_up=收盘封板 / broken=涨停后炸板未封住",
     )
     latest_price: Mapped[Optional[float]] = mapped_column(
         Numeric(16, 4), nullable=True, comment="最新价", default=None

@@ -10,6 +10,7 @@
 
 ## 需求索引
 
+- [2026-09-14 热门个股记录炸板股（涨停后破板）](./2026-09-14_limit_up_broken_pool.md) — `business_limit_up_stock` 加 `pool_type`（limit_up/broken，迁移 0032，唯一键扩为 date+code+type），抓取层新增东财炸板池 `stock_zt_pool_zbgc_em`（限最近30交易日，连板数从"涨停统计 days/ct"解析，无封板资金/原因）；`sync_all` 双池同抓（炸板失败不阻塞涨停）；`/list` 加 pool_type 筛选、stats 加 `broken_count`（涨停口径仍仅封板股）；炸板行不算连板概率；前端页加池类型筛选+状态列+炸板家数统计卡
 - [2026-09-11 报告英文残留根治（sanitize 双 bug + 历史修复）](./2026-09-11_report_english_residual_fix.md) — 9/8 兜底替换两 bug：think 在前致 json 块保护失效（枚举码被误改中文、tag 配色坏）、`\b` 把中文当单词字符致中英粘连漏替换；修复=先剥 think 再 search 定位 json 块 + ASCII 字母环视边界 + 映射表扩字段名 30 个；`repair_analysis_enum_codes.py` 恢复 9/8-9/11 共 14 个 run 的 json/parsed_result 英文码；坑：JSONB 更新必须 deepcopy 后整体重赋值（原地/浅拷贝改都不标脏）、9/9 一张 rotation 截断单（2 万字全是 think）修复后正文为空属原损
 - [2026-09-09 长期资讯采集标记 + AI 分析加权](./2026-09-09_news_long_term_tagging.md) — 厄尔尼诺类长周期事件此前随 24h/7d 时间窗消失：新增 `news_tagger.py` 关键词打标（标题命中即标/摘要需≥2词，标签复用轮动 THEME_GROUPS 口径），`business_news.long_term_tags`（迁移0031）+ 入库打标 + 近90天存量回填脚本（首跑命中 5957/179175）；`analysis_executor` 新增 `_collect_long_term_news` 按标签分组独立成段（每组3条/总20条，「中线背景非当日催化、共振提高权重点明传导链」），四类分析全注入且可随外部内容段摘除降级；坑：url 去重致旧闻不重打标须靠回填、一条多标签资讯在多组重复出现属设计
 - [2026-09-08 策略分析偶发失败修复（think 块干扰 JSON 解析）](./2026-09-08_strategy_think_block_parse_fix.md) — 「有些策略不执行」实为随机 run 失败：STOCK_PICKING 未绑模型回退 MiniMax-M3 思考模型，英文 `<think>` 块含方括号被「第一个[到最后一个]」截取逻辑混入 → `_extract_json_array` 解析前先剥 think 块 + 原文解析前独立 commit（修外层 rollback 丢证据的伴生 bug）+ 解析失败降级重试一次；调度链路排查无问题

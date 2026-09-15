@@ -398,3 +398,11 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 定时任务 `stock.rotation_stock_sync`（cron `38 15 * * mon-fri`，板块同步 15:31 之后写当日成分快照）
 - analysis 模块新增 `rotation` 类型（仅 close 时段）：`parsed_result` 为 `{rotation_summary, theme_heat[{theme,status,heat,viewpoint}], recent_boards[3-5]{board_name,board_type,stage,change_pct,viewpoint}, tomorrow_boards[3-5]{board_name,board_type,action(主攻/潜伏/回避),confidence(高/中/低),viewpoint}, switch_signals[{board_name,summary}], key_points[], tomorrow_outlook{direction:轮动延续|高低切换|热点退潮|新主线酝酿, summary}}`（theme_heat 2026-09-02 加入：数据注入含主题热度前10，gathering 主题成员优先潜伏、hot 主题中高位规避追涨）；收盘自动生成扩展为 market/sector/rotation；AI 只推演板块层，个股名单由切换表数据侧给出
 - 菜单 `ai_rotation-analysis`（ID 8032，sort=10，AI 目录下）；前端 `views/ai/rotation-analysis/index.vue`（左侧行业/概念 RadioGroup + 三页签表格，右侧 `analysis-report-panel.vue` rotation session=close）；回填按钮单次调 `board_type=all`
+
+### 热门个股记录炸板股（2026-09-14，迁移 0032）
+
+- `business_limit_up_stock` 新增 `pool_type: limit_up|broken`（收盘封板 / 涨停后炸板未封住），唯一约束扩为 `(record_date, stock_code, pool_type)`；存量行回填 limit_up
+- `GET /admin/stock/limit-up/list` 新增 `pool_type` 筛选参数（默认 all）；`LimitUpStockItem` 新增 `pool_type` 字段；炸板行 `continuation_probability/factors` 为 null（已炸板不算连板概率），`seal_amount/last_limit_up_time/limit_up_reason` 恒为 null（炸板池数据源无此字段），`consecutive_limit_up` 从「涨停统计 days/ct」解析
+- `GET /admin/stock/limit-up/stats` 的 `LimitUpStats` 新增 `broken_count`；`total_count`/板块分布/`max_consecutive` 口径不变（仅封板股）
+- `POST /admin/stock/limit-up/sync` 返回值加 `broken` 计数；涨停池与炸板池同抓，炸板池失败仅告警不阻塞（akshare `stock_zt_pool_zbgc_em` 限最近 30 交易日）
+- 前端 `views/a-stock/limit-up`：池类型 RadioGroup（全部/封板/炸板）+ 状态列（封板红 tag / 已炸板橙 tag）+ 统计卡「炸板家数」

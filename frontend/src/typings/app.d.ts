@@ -1426,6 +1426,13 @@ declare namespace App {
           limitUp: {
             title: string;
             totalCount: string;
+            brokenCount: string;
+            poolStatus: string;
+            statusSealed: string;
+            statusBroken: string;
+            poolAll: string;
+            poolLimitUp: string;
+            poolBroken: string;
             mainCount: string;
             chinextCount: string;
             starCount: string;

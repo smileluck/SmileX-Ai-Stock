@@ -10,6 +10,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-09-14 热门个股记录炸板股（涨停后破板）](./business/2026-09-14_limit_up_broken_pool.md) — 涨停池表加 `pool_type` 判别列（迁移 0032）+ 东财炸板池 `stock_zt_pool_zbgc_em` 双池同抓；`/list` 加 pool_type 筛选、stats 加 broken_count（涨停口径不变仅封板股）；前端加池类型筛选/状态列/炸板家数
 - [2026-09-11 报告英文残留根治（sanitize 双 bug + 历史修复）](./business/2026-09-11_report_english_residual_fix.md) — think 块致 json 保护失效 + `\b` 边界对中英粘连失效；修复为剥 think + ASCII 环视边界 + 字段名映射扩充；修复脚本恢复 14 个历史 run 枚举码（JSONB 须 deepcopy 重赋值）
 - [2026-09-09 长期资讯采集标记 + AI 分析加权](./business/2026-09-09_news_long_term_tagging.md) — 新增 news_tagger 关键词打标（标签复用轮动主题口径）+ `business_news.long_term_tags`（迁移0031）+ 存量回填；分析侧 `_collect_long_term_news` 按标签分组独立成段注入四类分析，中线背景权重 + 共振点明传导链
 - [2026-09-08 策略分析偶发失败修复（think 块干扰 JSON 解析）](./business/2026-09-08_strategy_think_block_parse_fix.md) — MiniMax-M3 思考模型的英文 `<think>` 块含方括号致信号 JSON 截取解析失败（随机命中策略）；修复=解析前剥 think 块 + 原文独立落库 + 失败重试一次

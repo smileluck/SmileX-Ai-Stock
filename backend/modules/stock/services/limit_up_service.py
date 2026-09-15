@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-涨停股池服务：同步入库 + 查询
+涨停/炸板股池服务：同步入库 + 查询
 """
 import logging
 from datetime import date
@@ -104,22 +104,29 @@ def calc_continuation(item: LimitUpStockItem) -> tuple[int, list[ContinuationFac
 
 
 class LimitUpService:
-    """涨停股池服务"""
+    """涨停/炸板股池服务"""
 
     @staticmethod
     async def sync_all(db: AsyncSession) -> dict:
-        """抓取当日涨停股池并写入快照"""
+        """抓取当日涨停股池 + 炸板股池并写入快照"""
         today = timezone.now().date()
         trade_date = today.strftime("%Y%m%d")
         raw_items = await limit_up_fetcher.fetch_limit_up_pool(trade_date)
-        if not raw_items:
-            return {"fetched": 0, "saved": 0}
 
-        rows = [
-            {
+        # 炸板池失败不阻塞涨停池入库（接口仅支持最近 30 个交易日）
+        try:
+            broken_items = await limit_up_fetcher.fetch_broken_pool(trade_date)
+        except Exception as e:
+            logger.warning("炸板股池抓取失败(date=%s)，跳过: %s", trade_date, e)
+            broken_items = []
+
+        rows = []
+        for it in raw_items:
+            rows.append({
                 "record_date": today,
                 "stock_code": it["stock_code"],
                 "stock_name": it["stock_name"],
+                "pool_type": "limit_up",
                 "market_board": it["market_board"],
                 "latest_price": it.get("latest_price"),
                 "change_pct": it.get("change_pct"),
@@ -134,13 +141,35 @@ class LimitUpService:
                 "industry": it.get("industry"),
                 "limit_up_reason": it.get("limit_up_reason"),
                 "created_at": timezone.now(),
-            }
-            for it in raw_items
-        ]
+            })
+        for it in broken_items:
+            rows.append({
+                "record_date": today,
+                "stock_code": it["stock_code"],
+                "stock_name": it["stock_name"],
+                "pool_type": "broken",
+                "market_board": it["market_board"],
+                "latest_price": it.get("latest_price"),
+                "change_pct": it.get("change_pct"),
+                "turnover_rate": it.get("turnover_rate"),
+                "turnover": it.get("turnover"),
+                "amplitude": it.get("amplitude"),
+                "seal_amount": it.get("seal_amount"),
+                "first_limit_up_time": it.get("first_limit_up_time"),
+                "last_limit_up_time": it.get("last_limit_up_time"),
+                "break_count": it.get("break_count"),
+                "consecutive_limit_up": it.get("consecutive_limit_up"),
+                "industry": it.get("industry"),
+                "limit_up_reason": it.get("limit_up_reason"),
+                "created_at": timezone.now(),
+            })
+        broken_count = len(broken_items)
+        if not rows:
+            return {"fetched": 0, "saved": 0, "broken": 0}
 
         stmt = insert(BusinessLimitUpStock).values(rows)
         stmt = stmt.on_conflict_do_update(
-            index_elements=["record_date", "stock_code"],
+            index_elements=["record_date", "stock_code", "pool_type"],
             set_={
                 "stock_name": stmt.excluded.stock_name,
                 "market_board": stmt.excluded.market_board,
@@ -162,7 +191,11 @@ class LimitUpService:
         result = await db.execute(stmt)
         await db.commit()
 
-        return {"fetched": len(raw_items), "saved": result.rowcount or 0}
+        return {
+            "fetched": len(raw_items),
+            "saved": result.rowcount or 0,
+            "broken": broken_count,
+        }
 
     @staticmethod
     async def _resolve_date(db: AsyncSession, record_date: str | None) -> date | None:
@@ -182,10 +215,11 @@ class LimitUpService:
         db: AsyncSession,
         record_date: str | None = None,
         market_board: str = "all",
+        pool_type: str = "all",
         offset: int = 0,
         limit: int = 100,
     ) -> tuple[list[LimitUpStockItem], int]:
-        """获取涨停股列表（分页），返回 (items, total)"""
+        """获取涨停/炸板股列表（分页），返回 (items, total)"""
         target_date = await LimitUpService._resolve_date(db, record_date)
         if not target_date:
             return [], 0
@@ -196,6 +230,8 @@ class LimitUpService:
         )
         if market_board != "all":
             base = base.where(BusinessLimitUpStock.market_board == market_board)
+        if pool_type != "all":
+            base = base.where(BusinessLimitUpStock.pool_type == pool_type)
 
         # 按连板数降序，其次按成交额降序
         base = base.order_by(
@@ -211,7 +247,9 @@ class LimitUpService:
         items = []
         for row in result.scalars().all():
             item = LimitUpStockItem.model_validate(row)
-            item.continuation_probability, item.continuation_factors = calc_continuation(item)
+            # 已炸板个股连板概率无意义，跳过评分
+            if item.pool_type != "broken":
+                item.continuation_probability, item.continuation_factors = calc_continuation(item)
             items.append(item)
         return items, total
 
@@ -219,7 +257,7 @@ class LimitUpService:
     async def get_stats(
         db: AsyncSession, record_date: str | None = None
     ) -> LimitUpStats:
-        """获取当日涨停统计"""
+        """获取当日涨停统计（涨停家数口径不变，仅统计封板股；炸板家数单列）"""
         target_date = await LimitUpService._resolve_date(db, record_date)
         if not target_date:
             return LimitUpStats()
@@ -232,10 +270,15 @@ class LimitUpService:
         result = await db.execute(base)
         rows = result.scalars().all()
 
-        stats = LimitUpStats(record_date=target_date, total_count=len(rows))
+        stats = LimitUpStats(record_date=target_date)
         board_dist: dict[str, int] = {}
         max_consec = 0
         for row in rows:
+            if row.pool_type == "broken":
+                stats.broken_count += 1
+                continue
+
+            stats.total_count += 1
             board = row.market_board
             if board == "main":
                 stats.main_count += 1

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-涨停股池（热门个股）接口
+涨停/炸板股池（热门个股）接口
 """
 import logging
 
@@ -25,22 +25,22 @@ limit_up_router = APIRouter(prefix="/limit-up", tags=["A股/热门个股"])
 @limit_up_router.post(
     "/sync",
     response_model=ResponseModel[dict],
-    summary="手动触发涨停股池同步",
+    summary="手动触发涨停/炸板股池同步",
     dependencies=[Depends(require_permission("stock:limit_up:sync"))],
 )
 async def sync_limit_up(
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """手动抓取当日涨停股池并写入快照"""
+    """手动抓取当日涨停股池与炸板股池并写入快照"""
     result = await LimitUpService.sync_all(db)
-    return response_base.success(data=result, msg="涨停股池同步完成")
+    return response_base.success(data=result, msg="涨停/炸板股池同步完成")
 
 
 @limit_up_router.get(
     "/list",
     response_model=ResponseModel,
-    summary="获取涨停股列表（分页）",
+    summary="获取涨停/炸板股列表（分页）",
     dependencies=[Depends(require_permission("stock:limit_up:list"))],
 )
 async def get_limit_up_list(
@@ -48,14 +48,17 @@ async def get_limit_up_list(
     market_board: str = Query(
         "all", description="市场板块: all/main/chinext/star"
     ),
+    pool_type: str = Query(
+        "all", description="池类型: all/limit_up/broken（broken=涨停后炸板未封住）"
+    ),
     page_params: PageRequest = Depends(get_page_params),
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """获取涨停股列表，支持按市场板块筛选"""
+    """获取涨停/炸板股列表，支持按市场板块与池类型筛选"""
     offset = (page_params.page - 1) * page_params.page_size
     items, total = await LimitUpService.get_list(
-        db, date, market_board, offset, page_params.page_size
+        db, date, market_board, pool_type, offset, page_params.page_size
     )
     total_pages = (total + page_params.page_size - 1) // page_params.page_size
     page_data = ResponsePageDataModel(
@@ -71,7 +74,7 @@ async def get_limit_up_list(
 @limit_up_router.get(
     "/stats",
     response_model=ResponseModel[LimitUpStats],
-    summary="获取当日涨停统计",
+    summary="获取当日涨停统计（含炸板家数）",
     dependencies=[Depends(require_permission("stock:limit_up:list"))],
 )
 async def get_limit_up_stats(
@@ -79,7 +82,7 @@ async def get_limit_up_stats(
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """获取当日涨停统计（涨停家数、市场板块分布、连板高度等）"""
+    """获取当日涨停统计（涨停家数、市场板块分布、连板高度、炸板家数等，涨停口径仅含封板股）"""
     data = await LimitUpService.get_stats(db, date)
     return response_base.success(data=data)
 
@@ -94,6 +97,6 @@ async def get_limit_up_dates(
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """获取涨停股池所有可回看的快照日期（降序）"""
+    """获取涨停/炸板股池所有可回看的快照日期（降序）"""
     dates = await LimitUpService.get_dates(db)
     return response_base.success(data=[d.isoformat() for d in dates])

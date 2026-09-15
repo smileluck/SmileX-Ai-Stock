@@ -36,6 +36,7 @@ const FLAT = '#8c8c8c';
 
 const selectedDate = ref<number | null>(null);
 const marketBoard = ref<Api.StockLimitUp.MarketBoard>('all');
+const poolType = ref<Api.StockLimitUp.PoolType>('all');
 const page = ref(1);
 const pageSize = ref(50);
 const total = ref(0);
@@ -57,6 +58,15 @@ const BOARD_TAG_TYPE: Record<string, 'default' | 'primary' | 'info' | 'warning' 
   star: 'warning',
   bse: 'info'
 };
+
+function renderPoolStatus(row: Api.StockLimitUp.LimitUpStockItem) {
+  const broken = row.pool_type === 'broken';
+  return (
+    <NTag size="small" type={broken ? 'warning' : 'error'} bordered={false}>
+      {broken ? $t('page.aStock.limitUp.statusBroken') : $t('page.aStock.limitUp.statusSealed')}
+    </NTag>
+  );
+}
 
 function fmtPct(val: number | null) {
   if (val === null || val === undefined) return '-';
@@ -164,6 +174,7 @@ async function loadData(silent = false) {
     const { data: resp, error } = await fetchGetLimitUpList({
       date: selectedDate.value ? dayjs(selectedDate.value).format('YYYY-MM-DD') : null,
       market_board: marketBoard.value,
+      pool_type: poolType.value,
       page: page.value,
       page_size: pageSize.value
     });
@@ -243,6 +254,13 @@ const columns = computed<DataTableColumns<Api.StockLimitUp.LimitUpStockItem>>(()
         {BOARD_LABEL[row.market_board] || row.market_board}
       </NTag>
     )
+  },
+  {
+    key: 'pool_type',
+    title: $t('page.aStock.limitUp.poolStatus'),
+    width: 80,
+    align: 'center',
+    render: row => renderPoolStatus(row)
   },
   {
     key: 'latest_price',
@@ -334,10 +352,15 @@ onMounted(() => {
 <template>
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
     <NCard v-if="stats" :bordered="false" size="small" class="card-wrapper">
-      <NGrid responsive="screen" cols="2 s:3 m:6" :x-gap="16" :y-gap="8">
+      <NGrid responsive="screen" cols="2 s:3 m:7" :x-gap="16" :y-gap="8">
         <NGridItem>
           <NStatistic :label="$t('page.aStock.limitUp.totalCount')">
             <span style="color: #f5222d; font-weight: 700">{{ stats.total_count }}</span>
+          </NStatistic>
+        </NGridItem>
+        <NGridItem>
+          <NStatistic :label="$t('page.aStock.limitUp.brokenCount')">
+            <span style="color: #fa8c16; font-weight: 700">{{ stats.broken_count }}</span>
           </NStatistic>
         </NGridItem>
         <NGridItem>
@@ -364,12 +387,19 @@ onMounted(() => {
 
     <NCard :bordered="false" size="small" class="card-wrapper">
       <div class="flex-y-center flex-wrap justify-between gap-12px">
-        <NRadioGroup v-model:value="marketBoard" size="small" @update:value="onFilterChange">
-          <NRadioButton value="all">{{ $t('page.aStock.limitUp.all') }}</NRadioButton>
-          <NRadioButton value="main">{{ $t('page.aStock.limitUp.main') }}</NRadioButton>
-          <NRadioButton value="chinext">{{ $t('page.aStock.limitUp.chinext') }}</NRadioButton>
-          <NRadioButton value="star">{{ $t('page.aStock.limitUp.star') }}</NRadioButton>
-        </NRadioGroup>
+        <NSpace align="center" :size="16">
+          <NRadioGroup v-model:value="poolType" size="small" @update:value="onFilterChange">
+            <NRadioButton value="all">{{ $t('page.aStock.limitUp.poolAll') }}</NRadioButton>
+            <NRadioButton value="limit_up">{{ $t('page.aStock.limitUp.poolLimitUp') }}</NRadioButton>
+            <NRadioButton value="broken">{{ $t('page.aStock.limitUp.poolBroken') }}</NRadioButton>
+          </NRadioGroup>
+          <NRadioGroup v-model:value="marketBoard" size="small" @update:value="onFilterChange">
+            <NRadioButton value="all">{{ $t('page.aStock.limitUp.all') }}</NRadioButton>
+            <NRadioButton value="main">{{ $t('page.aStock.limitUp.main') }}</NRadioButton>
+            <NRadioButton value="chinext">{{ $t('page.aStock.limitUp.chinext') }}</NRadioButton>
+            <NRadioButton value="star">{{ $t('page.aStock.limitUp.star') }}</NRadioButton>
+          </NRadioGroup>
+        </NSpace>
         <NSpace align="center" :size="12">
           <NText depth="3" class="flex-y-center gap-4px whitespace-nowrap text-12px">
             <icon-mdi-clock-outline class="text-14px" />
@@ -405,7 +435,7 @@ onMounted(() => {
           size="small"
           :loading="loading"
           :flex-height="!appStore.isMobile"
-          :scroll-x="1500"
+          :scroll-x="1580"
           :row-key="(row: Api.StockLimitUp.LimitUpStockItem) => row.id"
           class="sm:flex-1-hidden"
         />

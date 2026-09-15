@@ -1301,6 +1301,13 @@ const local: App.I18n.Schema = {
       limitUp: {
         title: '热门个股',
         totalCount: '涨停总数',
+        brokenCount: '炸板家数',
+        poolStatus: '状态',
+        statusSealed: '封板',
+        statusBroken: '已炸板',
+        poolAll: '全部',
+        poolLimitUp: '封板',
+        poolBroken: '炸板',
         mainCount: '沪深主板',
         chinextCount: '创业板',
         starCount: '科创板',
@@ -1336,7 +1343,7 @@ const local: App.I18n.Schema = {
         star: '科创板',
         lastRefresh: '最后刷新',
         sync: '同步数据',
-        syncSuccess: '涨停股池同步完成',
+        syncSuccess: '涨停/炸板股池同步完成',
         datePlaceholder: '选择日期查看历史'
       },
       stockHot: {
