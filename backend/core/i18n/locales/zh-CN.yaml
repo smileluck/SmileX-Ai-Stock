@@ -467,6 +467,8 @@ strategy:
   position_already_closed: "持仓已平仓"
   already_running: "该策略正在执行中"
   import_invalid: "策略导入数据非法"
+  rule_config_invalid: "规则型策略配置非法"
+  rule_no_pool: "规则型策略必须配置非空股票池"
 
 backtest:
   not_found: "回测记录不存在"

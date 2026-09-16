@@ -85,6 +85,8 @@
 | 11507 | 持仓已平仓 | POSITION_ALREADY_CLOSED |
 | 11508 | 该策略正在执行中 | STRATEGY_ALREADY_RUNNING |
 | 11509 | 策略导入数据非法 | STRATEGY_IMPORT_INVALID |
+| 11510 | 规则型策略配置非法 | STRATEGY_RULE_CONFIG_INVALID |
+| 11511 | 规则型策略必须配置非空股票池 | STRATEGY_RULE_NO_POOL |
 
 ### 9. 策略回测 (11701-11800)
 | 错误码 | 错误信息 | 常量名 |

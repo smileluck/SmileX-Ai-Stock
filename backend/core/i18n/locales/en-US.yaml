@@ -460,6 +460,8 @@ strategy:
   position_already_closed: "Position already closed"
   already_running: "This strategy is already running"
   import_invalid: "Invalid strategy import data"
+  rule_config_invalid: "Invalid rule strategy config"
+  rule_no_pool: "Rule strategy requires a non-empty stock pool"
 
 backtest:
   not_found: "Backtest record not found"

@@ -413,3 +413,78 @@ def calc_factor_values(
         else:
             warnings.append(f"股票 {code} 因子值为 NaN（历史序列不足或公式结果无效），跳过")
     return values, warnings
+
+
+def calc_factor_series(
+    formula: str, bars_by_code: dict[str, list[dict]]
+) -> tuple[dict[str, dict[str, float]], list[str]]:
+    """对 universe 内各股计算全历史因子序列（供回测逐日评估，避免逐日重算）。
+
+    与 calc_factor_values 的差异：
+    - 返回每个交易日的因子值而非仅末位值
+    - RANK 截面按交易日逐日归一化（每日只对当日有值的股票排名），无前视：
+      D 日的因子值只由 ≤D 的 bars 算出
+
+    Returns:
+        (series, warnings)：series 为 {code: {date: 因子值}}（仅含有限值的日期）
+    """
+    tree = validate_formula(formula)
+    warnings: list[str] = []
+
+    # ---- 每股阶段：时间序列求值，登记 RANK 内层序列 ----
+    per_stock: dict[str, tuple[Any, list[Any], list[str], int]] = {}
+    for code, bars in bars_by_code.items():
+        if not bars:
+            warnings.append(f"股票 {code} 无行情数据，跳过")
+            continue
+        env = bars_to_env(bars)
+        ctx = _EvalContext()
+        value = _eval(tree.body, env, ctx, len(bars))
+        per_stock[code] = (value, ctx.rank_inners, [b["date"] for b in bars], len(bars))
+
+    if not per_stock:
+        return {}, warnings
+
+    # ---- 截面阶段：各 RANK 节点按交易日逐日跨 universe 归一化排名 (0,1] ----
+    rank_count = max((len(inners) for _, inners, _, _ in per_stock.values()), default=0)
+    idx_by_date = {
+        code: {d: i for i, d in enumerate(dates)}
+        for code, (_, _, dates, _) in per_stock.items()
+    }
+    # rank_series_all[code][rank_idx] = 与该股日期序列对齐的截面排名数组
+    rank_series_all: dict[str, dict[int, Any]] = {code: {} for code in per_stock}
+    for rank_idx in range(rank_count):
+        inners_arr: dict[str, np.ndarray] = {}
+        all_dates: set[str] = set()
+        for code, (_, inners, dates, length) in per_stock.items():
+            if rank_idx < len(inners):
+                inners_arr[code] = _to_array(inners[rank_idx], length)
+                all_dates.update(dates)
+        for code, arr in inners_arr.items():
+            rank_series_all[code][rank_idx] = np.full(len(arr), np.nan)
+        for date in all_dates:
+            entries: list[tuple[str, int, float]] = []
+            for code, arr in inners_arr.items():
+                i = idx_by_date[code].get(date)
+                if i is not None and np.isfinite(arr[i]):
+                    entries.append((code, i, float(arr[i])))
+            entries.sort(key=lambda e: e[2])
+            total = len(entries)
+            for pos, (code, i, _) in enumerate(entries, start=1):
+                rank_series_all[code][rank_idx][i] = pos / total if total else np.nan
+
+    # ---- 求各股全序列因子值 ----
+    series: dict[str, dict[str, float]] = {}
+    for code, (value, _, dates, length) in per_stock.items():
+        resolved = _resolve(value, rank_series_all[code], length)
+        arr = _to_array(resolved, length)
+        day_values = {
+            dates[i]: round(float(arr[i]), 6)
+            for i in range(length)
+            if np.isfinite(arr[i])
+        }
+        if day_values:
+            series[code] = day_values
+        else:
+            warnings.append(f"股票 {code} 因子序列全为 NaN（历史序列不足或公式结果无效），跳过")
+    return series, warnings

@@ -5,7 +5,7 @@
 AI 分析策略相关 Schema
 """
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -33,6 +33,28 @@ STRATEGY_CATEGORY_NAMES = {
     "general": "综合",
 }
 
+# 策略类型常量：prompt-LLM 提示词策略，rule-规则型策略（因子条件固化）
+STRATEGY_TYPES = ("prompt", "rule")
+
+# 规则条件操作符（不支持 top_n——策略信号是逐股布尔判定，非截面排名选股）
+RULE_OPS = ("gt", "gte", "lt", "lte")
+
+
+class RuleCondition(BaseModel):
+    """单条规则条件：因子值与阈值的比较"""
+
+    factor_id: int = Field(..., description="因子 ID")
+    op: Literal["gt", "gte", "lt", "lte"] = Field(..., description="比较操作符")
+    value: float = Field(..., description="阈值")
+
+
+class RuleConfig(BaseModel):
+    """规则型策略配置：买入/卖出条件各自组内 AND；sell_conditions 为空表示
+    不做规则卖出（仅依赖止损/止盈/回撤等机械离场）"""
+
+    buy_conditions: list[RuleCondition] = Field(..., min_length=1, max_length=10, description="买入条件（AND）")
+    sell_conditions: list[RuleCondition] = Field(default_factory=list, max_length=10, description="卖出条件（AND），可为空")
+
 
 class StrategyCreateRequest(BaseModel):
     """创建策略请求"""
@@ -53,6 +75,12 @@ class StrategyCreateRequest(BaseModel):
         description="回撤止盈比例(%)：现价自持仓期间最高价回撤超该值且仍浮盈时止盈离场，0或不填不启用",
     )
     status: bool = Field(True, description="状态：True-启用，False-停用")
+    strategy_type: Literal["prompt", "rule"] = Field(
+        "prompt", description="策略类型：prompt-LLM 提示词策略，rule-规则型策略；创建后不可改（更新时忽略）"
+    )
+    rule_config: Optional[RuleConfig] = Field(
+        None, description="规则型策略配置（rule 型必填且 buy_conditions 非空；prompt 型必须为 null）"
+    )
 
 
 class StrategyUpdateRequest(StrategyCreateRequest):
@@ -82,6 +110,8 @@ class StrategyItem(BaseModel):
     take_profit_pct: Optional[float] = None
     trailing_drawdown_pct: Optional[float] = None
     status: bool
+    strategy_type: str = "prompt"
+    rule_config: Optional[RuleConfig] = None
     last_executed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -134,6 +164,8 @@ class StrategyExportData(BaseModel):
     take_profit_pct: Optional[float] = None
     trailing_drawdown_pct: Optional[float] = None
     tags: Optional[list[str]] = None
+    strategy_type: str = "prompt"
+    rule_config: Optional[RuleConfig] = None
 
 
 class StrategyImportRequest(BaseModel):
@@ -155,6 +187,12 @@ class StrategyImportRequest(BaseModel):
         5.0, ge=0, le=100, description="回撤止盈比例(%)，0或不填不启用"
     )
     tags: Optional[list[str]] = Field(None, max_length=10, description="策略标签")
+    strategy_type: Literal["prompt", "rule"] = Field(
+        "prompt", description="策略类型（旧格式导出 JSON 无此字段，缺省 prompt）"
+    )
+    rule_config: Optional[RuleConfig] = Field(
+        None, description="规则型策略配置（rule 型必填；prompt 型必须为 null）"
+    )
 
 
 class StrategyRunItem(BaseModel):

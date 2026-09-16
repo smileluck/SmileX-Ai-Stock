@@ -28,6 +28,7 @@ class BusinessAiStrategy(Base):
         Index("ix_ai_strategy_status", "status"),
         Index("ix_ai_strategy_is_template", "is_template"),
         Index("ix_ai_strategy_source_id", "source_id"),
+        Index("ix_ai_strategy_strategy_type", "strategy_type"),
         {"comment": "AI 分析策略配置表"},
     )
 
@@ -80,6 +81,15 @@ class BusinessAiStrategy(Base):
     )
     tags: Mapped[Optional[list]] = mapped_column(
         JSON, nullable=True, default=None, comment="标签列表，如 [\"打板\", \"短线\"]"
+    )
+    strategy_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="prompt",
+        comment="策略类型：prompt-LLM 提示词策略，rule-规则型策略（因子条件固化）；创建后不可改",
+    )
+    rule_config: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True, default=None,
+        comment='规则型策略配置：{"buy_conditions": [{factor_id, op, value}], '
+                '"sell_conditions": [...]}，op ∈ gt/gte/lt/lte；prompt 型必须为 NULL',
     )
 
 

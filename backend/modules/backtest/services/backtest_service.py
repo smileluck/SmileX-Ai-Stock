@@ -4,8 +4,11 @@
 """
 策略回测服务：CRUD + 发起回测（异步执行）
 
-回测语义：回放已记录的真实 AI 信号（business_strategy_signal），
-不做 LLM 逐日重放（行情/资讯快照是当前值，重放存在前视偏差）。
+回测语义按策略类型分流：
+- prompt 型：回放已记录的真实 AI 信号（business_strategy_signal），
+  不做 LLM 逐日重放（行情/资讯快照是当前值，重放存在前视偏差）
+- rule 型：按 rule_config 逐交易日评估因子条件自产信号（信号由 ≤D-1 数据
+  生成，D 日开盘成交，无前视）
 """
 import logging
 from datetime import datetime
@@ -38,9 +41,22 @@ class BacktestService:
         """创建回测任务并提交后台执行，立即返回 running 状态的记录。
 
         校验：策略存在、日期合法且 start < end、区间不超过 3 年；
+        rule 型策略需配置非空股票池与买入条件（回测逐日自产信号，不依赖已记录信号）；
         并发守卫：同策略存在 running 状态回测时拒绝。
         """
         strategy = await StrategyService.get_by_id(db, req.strategy_id)
+        if strategy.strategy_type == "rule":
+            cfg = strategy.rule_config or {}
+            if not cfg.get("buy_conditions"):
+                raise CustomError(
+                    error=CustomErrorCode.STRATEGY_RULE_CONFIG_INVALID,
+                    msg="规则型策略未配置买入条件，无法回测",
+                )
+            if not (strategy.stock_pool or {}).get("codes"):
+                raise CustomError(
+                    error=CustomErrorCode.STRATEGY_RULE_NO_POOL,
+                    msg="规则型策略必须配置非空股票池，无法回测",
+                )
 
         start = datetime.strptime(req.start_date, "%Y-%m-%d").date()
         end = datetime.strptime(req.end_date, "%Y-%m-%d").date()

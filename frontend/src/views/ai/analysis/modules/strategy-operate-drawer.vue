@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import {
   NButton,
   NCheckbox,
@@ -10,6 +10,8 @@ import {
   NFormItem,
   NInput,
   NInputNumber,
+  NRadioButton,
+  NRadioGroup,
   NSelect,
   NSwitch,
   NText
@@ -58,12 +60,25 @@ const drawerTitle = computed(() =>
   isEdit.value ? $t('page.aiStrategy.editStrategy') : $t('page.aiStrategy.createStrategy')
 );
 
+const TYPE_OPTIONS: Array<{ value: Api.Strategy.StrategyType; label: string }> = [
+  { value: 'prompt', label: $t('page.aiStrategy.typePrompt') },
+  { value: 'rule', label: $t('page.aiStrategy.typeRule') }
+];
+
 const formRef = reactive<Partial<FormInst>>({});
+
+/** 规则条件行（op 复用选股器类型；规则模式不提供 top_n 选项，提交时收窄为 RuleOp） */
+interface ConditionRow {
+  factor_id: number | null;
+  op: Api.Factor.ScreenOp;
+  value: number | null;
+}
 
 type Model = {
   name: string;
   description: string | null;
   category: Api.Strategy.StrategyCategory | string;
+  strategy_type: Api.Strategy.StrategyType;
   prompt_template: string | null;
   stockPoolCodes: string;
   execute_periods: Api.Strategy.ExecutePeriod[];
@@ -78,6 +93,7 @@ const model = reactive<Model>({
   name: '',
   description: null,
   category: 'general',
+  strategy_type: 'prompt',
   prompt_template: null,
   stockPoolCodes: '',
   execute_periods: ['morning'],
@@ -87,6 +103,9 @@ const model = reactive<Model>({
   trailing_drawdown_pct: 5,
   status: true
 });
+
+const buyConditions = ref<ConditionRow[]>([{ factor_id: null, op: 'lt', value: null }]);
+const sellConditions = ref<ConditionRow[]>([]);
 
 const rules: FormRules = {
   name: [{ required: true, message: $t('page.aiStrategy.form.nameRequired'), trigger: 'blur' }],
@@ -105,6 +124,11 @@ function or<T>(v: T | null | undefined, fallback: T): T {
   return v ?? fallback;
 }
 
+/** 后端 rule_config 条件行转表单行（value 为 null 时保持空待用户补填） */
+function toRows(conds: Api.Strategy.RuleCondition[] | undefined): ConditionRow[] {
+  return (conds ?? []).map(c => ({ factor_id: c.factor_id, op: c.op, value: c.value }));
+}
+
 watch(
   () => props.visible,
   visible => {
@@ -113,6 +137,7 @@ watch(
     model.name = or(e?.name, '');
     model.description = or(e?.description, null);
     model.category = or(e?.category, 'general');
+    model.strategy_type = or(e?.strategy_type, 'prompt');
     model.prompt_template = or(e?.prompt_template, null);
     model.stockPoolCodes = or(e?.stock_pool?.codes, []).join(', ');
     model.execute_periods = or(e?.execute_periods, ['morning']);
@@ -121,11 +146,37 @@ watch(
     model.take_profit_pct = or(e?.take_profit_pct, 10);
     model.trailing_drawdown_pct = or(e?.trailing_drawdown_pct, 5);
     model.status = or(e?.status, true);
+    buyConditions.value = toRows(e?.rule_config?.buy_conditions);
+    if (!buyConditions.value.length) buyConditions.value = [{ factor_id: null, op: 'lt', value: null }];
+    sellConditions.value = toRows(e?.rule_config?.sell_conditions);
   }
 );
 
 function closeDrawer() {
   emit('update:visible', false);
+}
+
+/** 规则模式校验并组装 rule_config；不合法时提示并返回 null */
+function buildRuleConfig(codes: string[]): Api.Strategy.RuleConfig | null | 'invalid' {
+  if (model.strategy_type === 'prompt') return null;
+  if (!codes.length) {
+    window.$message?.warning($t('page.aiStrategy.form.rulePoolRequired'));
+    return 'invalid';
+  }
+  const valid = (rows: ConditionRow[]) => rows.filter(c => c.factor_id !== null && c.value !== null);
+  const buys = valid(buyConditions.value);
+  if (!buys.length) {
+    window.$message?.warning($t('page.aiStrategy.form.buyConditionRequired'));
+    return 'invalid';
+  }
+  return {
+    buy_conditions: buys.map(c => ({ factor_id: c.factor_id!, op: c.op as Api.Strategy.RuleOp, value: c.value! })),
+    sell_conditions: valid(sellConditions.value).map(c => ({
+      factor_id: c.factor_id!,
+      op: c.op as Api.Strategy.RuleOp,
+      value: c.value!
+    }))
+  };
 }
 
 async function handleSubmit() {
@@ -134,11 +185,15 @@ async function handleSubmit() {
     .split(/[,，\s]+/)
     .map(s => s.trim())
     .filter(Boolean);
+  const ruleConfig = buildRuleConfig(codes);
+  if (ruleConfig === 'invalid') return;
   const data: Api.Strategy.StrategySaveParams = {
     name: model.name,
     description: model.description || null,
     category: model.category || 'general',
-    prompt_template: model.prompt_template || null,
+    strategy_type: model.strategy_type,
+    rule_config: ruleConfig,
+    prompt_template: model.strategy_type === 'prompt' ? model.prompt_template || null : null,
     stock_pool: codes.length > 0 ? { codes } : null,
     execute_periods: model.execute_periods,
     max_positions: model.max_positions,
@@ -156,6 +211,14 @@ async function handleSubmit() {
   <NDrawer :show="visible" :width="520" @update:show="v => emit('update:visible', v)">
     <NDrawerContent :title="drawerTitle" closable :native-scrollbar="false">
       <NForm ref="formRef" :model="model" :rules="rules" label-placement="top">
+        <NFormItem :label="$t('page.aiStrategy.form.strategyType')" path="strategy_type">
+          <NSpace align="center" :size="12">
+            <NRadioGroup v-model:value="model.strategy_type" :disabled="isEdit">
+              <NRadioButton v-for="opt in TYPE_OPTIONS" :key="opt.value" :value="opt.value" :label="opt.label" />
+            </NRadioGroup>
+            <NText v-if="isEdit" depth="3" class="text-12px">{{ $t('page.aiStrategy.form.strategyTypeTip') }}</NText>
+          </NSpace>
+        </NFormItem>
         <NFormItem :label="$t('page.aiStrategy.form.name')" path="name">
           <NInput v-model:value="model.name" :placeholder="$t('page.aiStrategy.form.namePlaceholder')" />
         </NFormItem>
@@ -165,7 +228,7 @@ async function handleSubmit() {
         <NFormItem :label="$t('page.aiStrategy.form.category')" path="category">
           <NSelect v-model:value="model.category" :options="CATEGORY_OPTIONS" />
         </NFormItem>
-        <NFormItem :label="$t('page.aiStrategy.form.prompt')" path="prompt_template">
+        <NFormItem v-if="model.strategy_type === 'prompt'" :label="$t('page.aiStrategy.form.prompt')" path="prompt_template">
           <NInput
             v-model:value="model.prompt_template"
             type="textarea"
@@ -173,8 +236,29 @@ async function handleSubmit() {
             :placeholder="$t('page.aiStrategy.form.promptPlaceholder')"
           />
         </NFormItem>
+        <template v-else>
+          <NFormItem :label="$t('page.aiStrategy.form.buyConditions')" path="buyConditions">
+            <FactorConditionBuilder v-model="buyConditions" />
+          </NFormItem>
+          <NFormItem path="sellConditions">
+            <template #label>
+              <NSpace align="center" :size="8">
+                <span>{{ $t('page.aiStrategy.form.sellConditions') }}</span>
+                <NText depth="3" class="text-12px">{{ $t('page.aiStrategy.form.sellConditionsTip') }}</NText>
+              </NSpace>
+            </template>
+            <FactorConditionBuilder v-model="sellConditions" allow-empty />
+          </NFormItem>
+        </template>
         <NFormItem :label="$t('page.aiStrategy.form.stockPool')" path="stockPoolCodes">
-          <NInput v-model:value="model.stockPoolCodes" :placeholder="$t('page.aiStrategy.form.stockPoolPlaceholder')" />
+          <NInput
+            v-model:value="model.stockPoolCodes"
+            :placeholder="
+              model.strategy_type === 'rule'
+                ? $t('page.aiStrategy.form.stockPoolPlaceholderRule')
+                : $t('page.aiStrategy.form.stockPoolPlaceholder')
+            "
+          />
         </NFormItem>
         <NFormItem :label="$t('page.aiStrategy.form.periods')" path="execute_periods">
           <NCheckboxGroup v-model:value="model.execute_periods">

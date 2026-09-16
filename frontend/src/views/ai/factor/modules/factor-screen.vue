@@ -6,7 +6,6 @@ import {
   NCard,
   NDataTable,
   NInput,
-  NInputNumber,
   NModal,
   NRadioButton,
   NRadioGroup,
@@ -51,7 +50,7 @@ const codesText = ref('');
 const strategyId = ref<number | null>(null);
 
 // ------------------------------------------------------------------
-// 条件构建器（多条件 AND）
+// 条件构建器（多条件 AND，行编辑由 FactorConditionBuilder 承担）
 // ------------------------------------------------------------------
 interface ConditionRow {
   factor_id: number | null;
@@ -59,23 +58,7 @@ interface ConditionRow {
   value: number | null;
 }
 
-const OP_OPTIONS: Array<{ value: Api.Factor.ScreenOp; label: string }> = [
-  { value: 'gt', label: '>' },
-  { value: 'gte', label: '≥' },
-  { value: 'lt', label: '<' },
-  { value: 'lte', label: '≤' },
-  { value: 'top_n', label: $t('page.aiFactor.screen.opTopN') }
-];
-
 const conditions = ref<ConditionRow[]>([{ factor_id: null, op: 'gt', value: null }]);
-
-function addCondition() {
-  conditions.value.push({ factor_id: null, op: 'gt', value: null });
-}
-
-function removeCondition(index: number) {
-  conditions.value.splice(index, 1);
-}
 
 function parseCodes(text: string): string[] {
   return [...new Set(text.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean))];
@@ -216,40 +199,14 @@ onMounted(() => {
             <NText depth="2" class="w-80px">{{ $t('page.aiFactor.screen.conditions') }}</NText>
             <NText depth="3" class="text-12px">{{ $t('page.aiFactor.screen.conditionsTip') }}</NText>
           </NSpace>
-          <NSpace v-for="(cond, i) in conditions" :key="i" align="center" :size="8">
-            <NSelect
-              v-model:value="cond.factor_id"
-              filterable
-              :placeholder="$t('page.aiFactor.screen.factorPlaceholder')"
-              :options="factorOptions"
-              class="w-240px"
-            />
-            <NSelect v-model:value="cond.op" :options="OP_OPTIONS" class="w-110px" />
-            <NInputNumber
-              v-model:value="cond.value"
-              :placeholder="cond.op === 'top_n' ? 'N' : $t('page.aiFactor.screen.valuePlaceholder')"
-              class="w-140px"
-            />
-            <NButton
-              size="tiny"
-              type="error"
-              ghost
-              :disabled="conditions.length <= 1"
-              @click="removeCondition(i)"
-            >
-              <template #icon><icon-mdi-minus class="text-icon" /></template>
-            </NButton>
-          </NSpace>
-          <NSpace align="center" :size="12">
-            <NButton size="small" dashed :disabled="conditions.length >= 10" @click="addCondition">
-              <template #icon><icon-mdi-plus class="text-icon" /></template>
-              {{ $t('page.aiFactor.screen.addCondition') }}
-            </NButton>
-            <NButton type="primary" :loading="running" @click="onRun">
-              <template #icon><icon-mdi-filter-outline class="text-icon" /></template>
-              {{ $t('page.aiFactor.screen.run') }}
-            </NButton>
-          </NSpace>
+          <FactorConditionBuilder v-model="conditions" allow-top-n>
+            <template #extra>
+              <NButton type="primary" :loading="running" @click="onRun">
+                <template #icon><icon-mdi-filter-outline class="text-icon" /></template>
+                {{ $t('page.aiFactor.screen.run') }}
+              </NButton>
+            </template>
+          </FactorConditionBuilder>
         </NSpace>
       </NSpace>
     </NCard>

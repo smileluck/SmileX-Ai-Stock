@@ -64,7 +64,10 @@ const submitting = ref(false);
 async function loadStrategyOptions() {
   const { data, error } = await fetchGetStrategyList({ page: 1, page_size: 100 });
   if (!error) {
-    strategyOptions.value = (data?.records ?? []).map(s => ({ value: s.id, label: s.name }));
+    strategyOptions.value = (data?.records ?? []).map(s => ({
+      value: s.id,
+      label: `${s.name} [${s.strategy_type === 'rule' ? $t('page.aiBacktest.tagRule') : $t('page.aiBacktest.tagAi')}]`
+    }));
   }
 }
 
@@ -307,6 +310,7 @@ onMounted(() => {
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
     <!-- 发起回测 -->
     <NCard :title="$t('page.aiBacktest.formTitle')" :bordered="false" size="small" class="card-wrapper">
+      <NText depth="3" class="mb-8px block text-12px">{{ $t('page.aiBacktest.modeTip') }}</NText>
       <NForm label-placement="left" :label-width="80" :show-feedback="false">
         <NSpace align="center" :size="16" class="flex-wrap">
           <NFormItem :label="$t('page.aiBacktest.formStrategy')" class="mb-0">

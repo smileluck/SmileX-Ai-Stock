@@ -61,6 +61,7 @@ async def strategy_run_execute():
     from database.utils.timezone import timezone
     from modules.strategy.services.strategy_service import StrategyService
     from modules.strategy.services.strategy_executor import StrategyExecutor
+    from modules.strategy.services.rule_executor import RuleExecutor
 
     now = timezone.now()
     period = _match_period(now)
@@ -88,7 +89,9 @@ async def strategy_run_execute():
                 total["skipped"] += 1
                 continue
             try:
-                await StrategyExecutor.submit_run(db, strategy, run_period=period)
+                # 按策略类型分流：rule-规则评估，prompt-LLM 分析（并发守卫口径一致）
+                executor = RuleExecutor if strategy.strategy_type == "rule" else StrategyExecutor
+                await executor.submit_run(db, strategy, run_period=period)
                 total["submitted"] += 1
             except CustomError:
                 # 并发守卫：该策略已有 running 记录（如手动触发正在进行）

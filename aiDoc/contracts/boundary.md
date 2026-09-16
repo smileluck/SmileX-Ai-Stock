@@ -414,7 +414,7 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 
 - 前缀 `/admin/backtest`；权限码复用 `strategy:manage`（未新增菜单/权限种子，菜单项需后台菜单库手工新增指向 `/ai/backtest`）
 - 接口：
-  - `POST /run`：body `{strategy_id, start_date, end_date, initial_capital=1000000, slippage_pct=0.1, commission_pct=0.025, stamp_tax_pct=0.05}`；异步提交，毫秒级返回 running 状态记录（后台回放该策略区间内已记录的真实 AI 信号按 baostock 不复权日线逐日撮合，**非 LLM 逐日重放**）；校验：策略不存在 11501、日期非法/start≥end/区间>3 年 11703、同策略 running 并发 11702
+  - `POST /run`：body `{strategy_id, start_date, end_date, initial_capital=1000000, slippage_pct=0.1, commission_pct=0.025, stamp_tax_pct=0.05}`；异步提交，毫秒级返回 running 状态记录（prompt 型后台回放该策略区间内已记录的真实 AI 信号按 baostock 不复权日线逐日撮合，**非 LLM 逐日重放**；rule 型为逐日因子评估自产信号，见下文「规则型策略契约」）；校验：策略不存在 11501、日期非法/start≥end/区间>3 年 11703、同策略 running 并发 11702
   - `GET /list?strategy_id&status&page&page_size`：统一分页结构，created_at 倒序
   - `GET /{id}`：详情 = 列表项 + `equity_curve`；错误码 11701
   - `GET /{id}/trades?page&page_size`：成交明细统一分页，trade_date+id 升序
@@ -459,5 +459,15 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
   - `POST /strategies/import`：body=导出 JSON + `schema_version`（**仅接受 1**，否则 11509）；分类/时段/股票池结构 `{codes: string[]}` 逐项校验（11509），百分比越界走 pydantic 400（同创建接口）；name 冲突自动追加（2）（3）…；新件 is_preset/is_template=False、status=False
 - `StrategyItem` 新增字段：`is_template: bool`、`source_id: number|null`、`tags: string[]|null`（`status` 仍为 bool 直传）
 - `TemplateItem = StrategyItem + clone_count`（存活克隆件计数，软删不计）`+ last_backtest: {start_date, end_date, total_return_pct, max_drawdown_pct, win_rate, trade_count} | null`（该 strategy_id 最新一条 status=success 回测的 result 摘要，无则 null）
-- 导出 JSON（schema_version=1）：`{schema_version, name, description, category, prompt_template, stock_pool, execute_periods, max_positions, stop_loss_pct, take_profit_pct, trailing_drawdown_pct, tags}`——不含 id/状态/时间戳；导入策略 `source_id` 恒为 None（跨环境迁移原 id 无意义）
+- 导出 JSON（schema_version=1）：`{schema_version, name, description, category, prompt_template, stock_pool, execute_periods, max_positions, stop_loss_pct, take_profit_pct, trailing_drawdown_pct, tags, strategy_type?, rule_config?}`——不含 id/状态/时间戳；导入策略 `source_id` 恒为 None（跨环境迁移原 id 无意义）；**2026-09-16 P2 起新增 `strategy_type`/`rule_config` 两可选字段**（旧格式 JSON 缺省按 prompt 型导入，schema_version 保持 1 向后兼容；rule 字段校验失败统一归 11509）
 - 前端：`views/ai/analysis/` 策略管理 Tab 操作列加 克隆(Popconfirm)/导出(Blob 下载 `<名>.strategy.json`)/发布(NDynamicTags 弹窗)/取消发布，名称列加「模板」tag；第四 Tab「策略模板」= `modules/strategy-template.vue`（模板表格：tags/克隆次数/last_backtest 绩效红涨绿跌 + 克隆此模板 + 导入弹窗）；i18n 键在 `page.aiStrategy.*`（与既有三 Tab 同域，非 aiAnalysis）
+
+---
+
+## 规则型策略契约（2026-09-16，迁移 0036）
+
+- `business_ai_strategy` 新增列：`strategy_type`（String(20) NOT NULL 默认 `prompt`，索引 `ix_ai_strategy_strategy_type`；存量回填 prompt）与 `rule_config`（JSON 可空）——`rule_config = {"buy_conditions": [{factor_id, op, value}], "sell_conditions": [...]}`，`op ∈ gt/gte/lt/lte`（**无 top_n**：规则信号是逐股布尔判定，非截面排名选股）；prompt 型 rule_config 必须为 null
+- 创建/更新接口加两字段；校验：rule 型 buy_conditions 非空（schema min_length=1）、sell_conditions 可空（空=仅靠止损/止盈/回撤机械离场）、factor_id 全部存在且启用、股票池必须非空（规则型不支持全市场选股）；新错误码 **11510 STRATEGY_RULE_CONFIG_INVALID** / **11511 STRATEGY_RULE_NO_POOL**；**strategy_type 创建后不可改——更新接口静默忽略请求值，按存量类型校验 rule_config**
+- 执行分流：`POST /strategies/{id}/run` 与调度任务 `strategy.run_execute` 按 strategy_type 分流——rule 型走 `RuleExecutor`（复用 StrategyExecutor submit_run 异步模式：并发守卫 11508/同日同时段去重口径一致，**无 LLM 调用**，universe=股票池∪当前持仓，因子取最近交易日 lookback=120），Run 的 `ai_raw_response` 为规则评估摘要文本（基准日/条件/信号计数/告警）；买入信号 `ref_buy_price`=基准日收盘价、止损/目标价按策略 pct 折算；信号口径与 prompt 型一致（落 business_strategy_signal 由每分钟交易引擎执行）
+- 回测分流：`POST /admin/backtest/run` 按 strategy_type 分流——prompt=`recorded_replay`（回放区间内已记录真实信号，口径不变），rule=`rule_daily_eval`（逐交易日 D 用截至 D-1 数据评估自产信号、D 日开盘成交，**严格无未来函数**；每票 bars 一次载入、因子经 `formula.py calc_factor_series` 全历史序列一次算好，RANK 按交易日逐日跨 universe 截面）；两模式均在 `result.warnings` 首条标注；BacktestItem 契约不变；rule 型 submit 即校验空池/无买入条件（11511/11510）
+- 前端：策略抽屉顶部「策略类型」单选（编辑时禁用）、rule 型隐藏提示词改显买入/卖出两组条件构建器（共享组件 `src/components/common/factor-condition-builder.vue`，选股器同用——选股器传 allow-top-n，策略规则不传）、股票池 rule 型必填提示、列表名称列「规则」tag；回测页策略下拉标注 [AI]/[规则] + 模式说明文案；typings `Api.Strategy.{StrategyType,RuleOp,RuleCondition,RuleConfig}`

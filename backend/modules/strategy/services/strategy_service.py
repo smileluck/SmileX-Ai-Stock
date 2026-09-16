@@ -13,11 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exception.errors import CustomError
 from core.response.response_code import CustomErrorCode
+from database.models.business.factor import BusinessFactor
 from database.models.business.strategy import BusinessAiStrategy
 from modules.strategy.schemas.strategy import (
     EXECUTE_PERIODS,
     STRATEGY_CATEGORIES,
     STRATEGY_EXPORT_SCHEMA_VERSION,
+    RuleConfig,
     StrategyCreateRequest,
     StrategyExportData,
     StrategyImportRequest,
@@ -44,6 +46,55 @@ def _validate_category(category: str) -> None:
             error=CustomErrorCode.STRATEGY_EXECUTE_FAILED,
             msg=f"不支持的策略分类: {category}，可选值: {list(STRATEGY_CATEGORIES)}",
         )
+
+
+def _rule_invalid(msg: str) -> CustomError:
+    return CustomError(error=CustomErrorCode.STRATEGY_RULE_CONFIG_INVALID, msg=msg)
+
+
+async def _validate_rule_config(
+    db: AsyncSession,
+    strategy_type: str,
+    rule_config: Optional[RuleConfig],
+    stock_pool: Optional[dict],
+) -> Optional[dict]:
+    """规则型配置校验，返回入库用的 dict（prompt 型返回 None）。
+
+    - prompt 型：rule_config 必须为 None
+    - rule 型：rule_config 必填且 buy_conditions 非空（schema 已保证），
+      sell_conditions 可空（空=仅机械离场）；op 由 schema Literal 限定 gt/gte/lt/lte
+      （规则信号是逐股布尔判定，不支持 top_n）；因子必须全部存在且启用；
+      股票池必须非空（规则型不支持全市场选股）
+    """
+    if strategy_type == "prompt":
+        if rule_config is not None:
+            raise _rule_invalid("prompt 型策略不允许配置 rule_config")
+        return None
+    if rule_config is None or not rule_config.buy_conditions:
+        raise _rule_invalid("rule 型策略必须配置 rule_config 且 buy_conditions 非空")
+
+    codes = (stock_pool or {}).get("codes") or []
+    if not codes:
+        raise CustomError(
+            error=CustomErrorCode.STRATEGY_RULE_NO_POOL,
+            msg="rule 型策略必须配置非空股票池（不支持全市场选股）",
+        )
+
+    factor_ids = {c.factor_id for c in rule_config.buy_conditions + rule_config.sell_conditions}
+    result = await db.execute(
+        select(BusinessFactor).where(
+            BusinessFactor.id.in_(factor_ids),
+            BusinessFactor.deleted_at.is_(None),
+        )
+    )
+    factors = {f.id: f for f in result.scalars().all()}
+    missing = factor_ids - factors.keys()
+    if missing:
+        raise _rule_invalid(f"因子不存在或已删除: {sorted(missing)}")
+    disabled = [f"{f.code}(id={f.id})" for f in factors.values() if not f.status]
+    if disabled:
+        raise _rule_invalid(f"因子已停用: {disabled}")
+    return rule_config.model_dump()
 
 
 class StrategyService:
@@ -115,6 +166,9 @@ class StrategyService:
     async def create(db: AsyncSession, req: StrategyCreateRequest) -> StrategyItem:
         _validate_periods(req.execute_periods)
         _validate_category(req.category)
+        rule_config = await _validate_rule_config(
+            db, req.strategy_type, req.rule_config, req.stock_pool
+        )
 
         exist = await db.execute(
             select(BusinessAiStrategy.id).where(
@@ -140,6 +194,8 @@ class StrategyService:
             take_profit_pct=req.take_profit_pct,
             trailing_drawdown_pct=req.trailing_drawdown_pct or None,
             status=req.status,
+            strategy_type=req.strategy_type,
+            rule_config=rule_config,
         )
         db.add(strategy)
         await db.commit()
@@ -153,6 +209,10 @@ class StrategyService:
         _validate_periods(req.execute_periods)
         _validate_category(req.category)
         strategy = await StrategyService.get_by_id(db, strategy_id)
+        # strategy_type 创建后不可改：更新时忽略请求值，按存量类型校验 rule_config
+        rule_config = await _validate_rule_config(
+            db, strategy.strategy_type, req.rule_config, req.stock_pool
+        )
 
         # 名称查重（排除自身）
         exist = await db.execute(
@@ -179,6 +239,7 @@ class StrategyService:
         strategy.take_profit_pct = req.take_profit_pct
         strategy.trailing_drawdown_pct = req.trailing_drawdown_pct or None
         strategy.status = req.status
+        strategy.rule_config = rule_config
         await db.commit()
         await db.refresh(strategy)
         return StrategyItem.model_validate(strategy)
@@ -240,6 +301,8 @@ class StrategyService:
             take_profit_pct=source.take_profit_pct,
             trailing_drawdown_pct=source.trailing_drawdown_pct,
             status=False,
+            strategy_type=source.strategy_type,
+            rule_config=dict(source.rule_config) if source.rule_config else None,
         )
         db.add(strategy)
         await db.commit()
@@ -348,6 +411,8 @@ class StrategyService:
             take_profit_pct=strategy.take_profit_pct,
             trailing_drawdown_pct=strategy.trailing_drawdown_pct,
             tags=strategy.tags,
+            strategy_type=strategy.strategy_type,
+            rule_config=strategy.rule_config,
         )
 
     @staticmethod
@@ -363,6 +428,9 @@ class StrategyService:
             _validate_category(req.category)
             _validate_periods(req.execute_periods)
             _validate_stock_pool(req.stock_pool)
+            rule_config = await _validate_rule_config(
+                db, req.strategy_type, req.rule_config, req.stock_pool
+            )
         except CustomError as e:
             # 统一归为导入非法（保留原始中文说明）
             raise CustomError(error=CustomErrorCode.STRATEGY_IMPORT_INVALID, msg=e.msg)
@@ -389,6 +457,8 @@ class StrategyService:
             take_profit_pct=req.take_profit_pct,
             trailing_drawdown_pct=req.trailing_drawdown_pct or None,
             status=False,
+            strategy_type=req.strategy_type,
+            rule_config=rule_config,
         )
         db.add(strategy)
         await db.commit()

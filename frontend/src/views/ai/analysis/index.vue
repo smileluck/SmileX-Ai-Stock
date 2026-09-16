@@ -243,6 +243,11 @@ const strategyColumns = computed<DataTableColumns<Api.Strategy.StrategyItem>>(()
     render: row => (
       <div class="flex items-center gap-4px">
         <span class="font-500">{row.name}</span>
+        {row.strategy_type === 'rule' ? (
+          <NTag size="tiny" bordered={false} type="success">
+            {$t('page.aiStrategy.ruleTag')}
+          </NTag>
+        ) : null}
         {row.is_preset ? (
           <NTag size="tiny" bordered={false} type="primary">
             {$t('page.aiStrategy.presetTag')}

@@ -211,7 +211,8 @@ async def export_strategy(
 ):
     """导出策略配置：{schema_version, name, description, category, prompt_template,
     stock_pool, execute_periods, max_positions, stop_loss_pct, take_profit_pct,
-    trailing_drawdown_pct, tags}，可经导入接口跨环境迁移"""
+    trailing_drawdown_pct, tags, strategy_type, rule_config}，可经导入接口跨环境迁移；
+    schema_version 保持 1（新增字段向后兼容，旧格式 JSON 缺省按 prompt 型导入）"""
     data = await StrategyService.export_strategy(db, strategy_id)
     return response_base.success(data=data)
 
@@ -230,10 +231,14 @@ async def run_strategy(
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """手动执行策略：创建执行记录后立即返回，LLM 分析在后台进行；
+    """手动执行策略：创建执行记录后立即返回，分析/评估在后台进行；
+    prompt 型走 LLM 分析，rule 型走规则评估；
     产出的买卖信号由每分钟交易引擎按实时价执行模拟买卖"""
+    from modules.strategy.services.rule_executor import RuleExecutor
+
     strategy = await StrategyService.get_by_id(db, strategy_id)
-    run_id = await StrategyExecutor.submit_run(db, strategy, run_period="manual", trigger_type="manual")
+    executor = RuleExecutor if strategy.strategy_type == "rule" else StrategyExecutor
+    run_id = await executor.submit_run(db, strategy, run_period="manual", trigger_type="manual")
     return response_base.success(
         data=StrategyRunSubmitResult(run_id=run_id),
         msg="已提交执行，分析完成后信号将由交易引擎执行",

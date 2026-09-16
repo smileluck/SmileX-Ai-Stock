@@ -9,6 +9,25 @@ declare namespace Api {
     /** 持仓状态 */
     export type PositionStatus = 'holding' | 'closed' | 'cancelled';
 
+    /** 策略类型：prompt-LLM 提示词策略，rule-规则型策略（因子条件固化）；创建后不可改 */
+    export type StrategyType = 'prompt' | 'rule';
+
+    /** 规则条件运算符（无 top_n——策略信号是逐股布尔判定，非截面排名选股） */
+    export type RuleOp = 'gt' | 'gte' | 'lt' | 'lte';
+
+    /** 单条规则条件 */
+    export interface RuleCondition {
+      factor_id: number;
+      op: RuleOp;
+      value: number;
+    }
+
+    /** 规则型策略配置：条件组内 AND；sell_conditions 为空表示仅机械离场（止损/止盈/回撤） */
+    export interface RuleConfig {
+      buy_conditions: RuleCondition[];
+      sell_conditions: RuleCondition[];
+    }
+
     /** 策略配置 */
     export interface StrategyItem {
       id: number;
@@ -20,6 +39,8 @@ declare namespace Api {
       /** 克隆/导入来源策略 ID */
       source_id: number | null;
       tags: string[] | null;
+      strategy_type: StrategyType;
+      rule_config: RuleConfig | null;
       prompt_template: string | null;
       stock_pool: { codes?: string[] } | null;
       execute_periods: ExecutePeriod[] | null;
@@ -68,6 +89,8 @@ declare namespace Api {
       take_profit_pct: number | null;
       trailing_drawdown_pct: number | null;
       tags: string[] | null;
+      strategy_type: StrategyType;
+      rule_config: RuleConfig | null;
     }
 
     /** 策略导入参数（导出 JSON + schema_version；新件默认停用） */
@@ -80,6 +103,10 @@ declare namespace Api {
       name: string;
       description?: string | null;
       category?: StrategyCategory | string;
+      /** 策略类型；更新时后端忽略（类型创建后不可改） */
+      strategy_type?: StrategyType;
+      /** rule 型必填且 buy_conditions 非空；prompt 型必须为 null */
+      rule_config?: RuleConfig | null;
       prompt_template?: string | null;
       stock_pool?: { codes: string[] } | null;
       execute_periods: ExecutePeriod[];

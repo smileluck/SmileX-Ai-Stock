@@ -1664,6 +1664,9 @@ declare namespace App {
         categoryBlueChip: string;
         categoryGeneral: string;
         presetTag: string;
+        typePrompt: string;
+        typeRule: string;
+        ruleTag: string;
         searchCode: string;
         filterStrategy: string;
         filterTimeRange: string;
@@ -1700,6 +1703,14 @@ declare namespace App {
           promptPlaceholder: string;
           stockPool: string;
           stockPoolPlaceholder: string;
+          stockPoolPlaceholderRule: string;
+          strategyType: string;
+          strategyTypeTip: string;
+          buyConditions: string;
+          buyConditionRequired: string;
+          sellConditions: string;
+          sellConditionsTip: string;
+          rulePoolRequired: string;
           periods: string;
           periodRequired: string;
           maxPositions: string;
@@ -1711,6 +1722,9 @@ declare namespace App {
       };
       aiBacktest: {
         formTitle: string;
+        modeTip: string;
+        tagAi: string;
+        tagRule: string;
         formStrategy: string;
         formStrategyPlaceholder: string;
         formRange: string;
