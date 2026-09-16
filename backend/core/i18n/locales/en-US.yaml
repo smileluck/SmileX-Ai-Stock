@@ -449,3 +449,8 @@ financial:
 research:
   stock_code_invalid: "Invalid stock code"
   sync_failed: "Failed to sync research reports"
+
+backtest:
+  not_found: "Backtest record not found"
+  running_conflict: "A backtest for this strategy is already running"
+  invalid_params: "Invalid backtest parameters"

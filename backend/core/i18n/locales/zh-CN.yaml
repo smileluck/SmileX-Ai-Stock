@@ -456,3 +456,8 @@ financial:
 research:
   stock_code_invalid: "股票代码非法"
   sync_failed: "研报同步失败"
+
+backtest:
+  not_found: "回测记录不存在"
+  running_conflict: "该策略有正在运行的回测"
+  invalid_params: "回测参数非法"

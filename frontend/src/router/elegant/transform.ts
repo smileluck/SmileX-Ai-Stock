@@ -175,6 +175,7 @@ const routeMap: RouteMap = {
   "about": "/about",
   "ai": "/ai",
   "ai_analysis": "/ai/analysis",
+  "ai_backtest": "/ai/backtest",
   "ai_chat": "/ai/chat",
   "ai_financial-analysis": "/ai/financial-analysis",
   "ai_macro": "/ai/macro",

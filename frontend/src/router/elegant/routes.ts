@@ -126,6 +126,15 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'ai_backtest',
+        path: '/ai/backtest',
+        component: 'view.ai_backtest',
+        meta: {
+          title: 'ai_backtest',
+          i18nKey: 'route.ai_backtest'
+        }
+      },
+      {
         name: 'ai_chat',
         path: '/ai/chat',
         component: 'view.ai_chat',

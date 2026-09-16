@@ -19,5 +19,6 @@ export * from './analysis';
 export * from './macro';
 export * from './financial';
 export * from './research';
+export * from './backtest';
 export * from './agent-chat';
 export * from './demo';

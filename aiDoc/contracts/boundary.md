@@ -1,4 +1,4 @@
-<!-- last-updated: 2026-09-15 -->
+<!-- last-updated: 2026-09-16 -->
 # 前后端边界与数据契约
 
 ## 责任边界
@@ -407,3 +407,19 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - `GET /admin/stock/limit-up/stats` 的 `LimitUpStats` 新增 `broken_count`；`total_count`/板块分布/`max_consecutive` 口径不变（仅封板股）
 - `POST /admin/stock/limit-up/sync` 返回值加 `broken` 计数；涨停池与炸板池同抓，炸板池失败仅告警不阻塞（akshare `stock_zt_pool_zbgc_em` 限最近 30 交易日）
 - 前端 `views/a-stock/limit-up`：池类型 RadioGroup（全部/封板/炸板）+ 状态列（封板红 tag / 已炸板橙 tag）+ 统计卡「炸板家数」
+
+---
+
+## 策略回测模块契约（2026-09-16，迁移 0033）
+
+- 前缀 `/admin/backtest`；权限码复用 `strategy:manage`（未新增菜单/权限种子，菜单项需后台菜单库手工新增指向 `/ai/backtest`）
+- 接口：
+  - `POST /run`：body `{strategy_id, start_date, end_date, initial_capital=1000000, slippage_pct=0.1, commission_pct=0.025, stamp_tax_pct=0.05}`；异步提交，毫秒级返回 running 状态记录（后台回放该策略区间内已记录的真实 AI 信号按 baostock 不复权日线逐日撮合，**非 LLM 逐日重放**）；校验：策略不存在 11501、日期非法/start≥end/区间>3 年 11703、同策略 running 并发 11702
+  - `GET /list?strategy_id&status&page&page_size`：统一分页结构，created_at 倒序
+  - `GET /{id}`：详情 = 列表项 + `equity_curve`；错误码 11701
+  - `GET /{id}/trades?page&page_size`：成交明细统一分页，trade_date+id 升序
+  - `DELETE /{id}`：软删，running 状态拒绝（11702）
+- `BacktestItem`：`status` 为**字符串三态** `running/success/failed`，无 bool 桥接；`start_date/end_date` 为 `YYYY-MM-DD` 字符串；`result` 可空（running/failed 时为 null）——绩效汇总 `{total_return_pct, annual_return_pct, max_drawdown_pct, sharpe, win_count, loss_count, win_rate, profit_factor, trade_count, final_equity, warnings[]}`，其中 sharpe（样本<2 天）/win_rate（无卖出）/profit_factor（无亏损）可为 null
+- `equity_curve`：`[{date, equity, cash, market_value}]`，按交易日升序，前端直接渲染（ECharts 折线）
+- `BacktestTradeItem`：`action: buy|sell`；`reason` 买入时为 AI 理由原文、卖出时为枚举 `stop_loss/target_reached/trailing_stop/ai_signal/backtest_end`；`return_rate` 仅 sell 有值（%）；金额/价格/比例均为 `number`（Numeric → float），百分比不带 `%`
+- 前端 API：`frontend/src/service/api/backtest.ts`，类型 `Api.Backtest.*`（`frontend/src/typings/api/backtest.d.ts`）；页面 `views/ai/backtest/`（发起表单 + 记录列表 running 时 10s 轮询 + 详情抽屉绩效卡/净值曲线/明细分页）

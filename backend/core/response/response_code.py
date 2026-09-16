@@ -161,6 +161,10 @@ class CustomErrorCode(CustomCodeBase):
     # 券商研报 11661-11680
     RESEARCH_STOCK_CODE_INVALID = (11661, "error.research.stock_code_invalid")
     RESEARCH_SYNC_FAILED = (11662, "error.research.sync_failed")
+    # 策略回测 11701-11800
+    BACKTEST_NOT_FOUND = (11701, "error.backtest.not_found")
+    BACKTEST_RUNNING_CONFLICT = (11702, "error.backtest.running_conflict")
+    BACKTEST_INVALID_PARAMS = (11703, "error.backtest.invalid_params")
 
 @dataclass
 class CustomResponse:

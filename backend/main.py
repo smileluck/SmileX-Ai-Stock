@@ -21,6 +21,7 @@ from modules.openapi.router import open_router
 from modules.stock.router import router as stock_router
 from modules.agent.router import router as agent_router
 from modules.strategy.router import router as strategy_router
+from modules.backtest.router import router as backtest_router
 from modules.analysis.router import router as analysis_router
 from modules.macro.router import router as macro_router
 from modules.financial.router import router as financial_router
@@ -146,6 +147,8 @@ app.include_router(stock_router)
 app.include_router(agent_router)
 # AI 分析策略模块（策略定制 + 定时执行 + 模拟盘跟踪）
 app.include_router(strategy_router)
+# 策略回测模块（回放真实 AI 信号 + 历史日线逐日撮合 + 绩效汇总）
+app.include_router(backtest_router)
 # AI 大盘/板块分析模块（异步生成 + 历史回看 + 收盘后定时生成）
 app.include_router(analysis_router)
 # AI 宏观指数模块（中美 CPI/PPI/M1/M2 等 + 注入 AI 分析）

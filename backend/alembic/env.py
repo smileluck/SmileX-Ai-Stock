@@ -49,16 +49,39 @@ from database.models.business.news import BusinessNews, BusinessNewsSyncLog
 from database.models.business.stock_hot import BusinessStockHotRank, BusinessStockHotSyncLog
 from database.models.business.stock_market import (
     BusinessMarketIndexDaily,
+    BusinessMarketFundFlow,
     BusinessBoardDaily,
+    BusinessBoardStockDaily,
     BusinessLimitUpStock,
     BusinessIndexConstituent,
 )
 from database.models.business.strategy import (
     BusinessAiStrategy,
     BusinessStrategyRun,
+    BusinessStrategySignal,
     BusinessStrategyPosition,
     BusinessPositionTrackLog,
 )
+from database.models.business.analysis import BusinessAnalysisRun, BusinessAnalysisConfig
+from database.models.business.block_trade import (
+    BusinessBlockTradeDaily,
+    BusinessBlockTradeActive,
+    BusinessBlockTradeSyncLog,
+)
+from database.models.business.financial import (
+    BusinessFinancialReport,
+    BusinessFinancialInterpretation,
+    BusinessFinancialConfig,
+)
+from database.models.business.macro import BusinessMacroIndicator
+from database.models.business.research import BusinessResearchReport
+from database.models.business.backtest import (
+    BusinessBacktest,
+    BusinessBacktestTrade,
+)
+from database.models.sys.ai_model import SysAiModel, SysAiModelBinding
+from database.models.sys.dept import SysDept
+from database.models.sys.permission import SysPermission
 from database.models.sys.scheduled_task import SysScheduledTask
 from database.models.sys.task_log import SysScheduledTaskLog
 
