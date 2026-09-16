@@ -1,3 +1,4 @@
+<!-- last-updated: 2026-09-15 -->
 # 开发流程
 
 ## 推荐开发顺序
@@ -62,16 +63,23 @@ type(scope): description
 ### 后端
 
 ```bash
-# 激活虚拟环境（Windows）
-.\venv\Scripts\activate.bat
+cd backend
 
-# 安装依赖
-uv install
+# 安装依赖（uv 项目，含 .venv 创建）
+uv sync
 
-# 启动开发服务器
-uvicorn main:app --reload
+# 启动开发服务器（监听 0.0.0.0:8000）
+uv run python main.py
 # 或
-python main.py
+uv run uvicorn main:app --reload
+```
+
+### MCP 独立服务
+
+```bash
+cd mcp-platform
+uv sync
+uv run python run.py   # 默认监听 127.0.0.1:9001
 ```
 
 ### 前端
@@ -105,6 +113,8 @@ pnpm gen-route
 - ReDoc: http://localhost:8000/redoc
 
 ### 数据库迁移
+
+在 `backend/` 目录下执行：
 
 ```bash
 # 创建迁移

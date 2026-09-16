@@ -1,0 +1,60 @@
+{
+  "harness_version": "unknown",
+  "project_name": "SmileX-AI-Stock",
+  "lang": "zh",
+  "generated": "2026-09-15",
+  "files": {
+    ".agents/skills/project-code-review/SKILL.md": {
+      "sha256": "85e629c77d5e4a31fb3336e49b89ac893a4276f13bb6edc68bdd83e958fc4bad",
+      "template": "agents-skills/project-code-review/SKILL.md"
+    },
+    ".agents/skills/project-pre-push-checks/SKILL.md": {
+      "sha256": "90b759852b9a0153ec97461afe765e3ec85d545c9badfc88d837f2a4d8a448ae",
+      "template": "agents-skills/project-pre-push-checks/SKILL.md"
+    },
+    "aiDoc/contracts/boundary.md": {
+      "sha256": "3e1bbe8f2a1252fdf80945c8bf5e8960f46dd91c5c2ccf98329b6cf65f70b925",
+      "template": "aidoc/contracts/boundary.md"
+    },
+    "aiDoc/frontend/frontend-rules.md": {
+      "sha256": "2286768d5f5c6b4b2af35f3b8daf2b1cbbb08b424f8937cecd930356989883c8",
+      "template": "aidoc/frontend/frontend-rules.md"
+    },
+    "aiDoc/frontend/frontend-utils.md": {
+      "sha256": "8a0a2ad1c613178e5e5f3ceeeecdd0529cf1a0c955b665f17abb997b84b34466",
+      "template": "aidoc/frontend/frontend-utils.md"
+    },
+    "aiDoc/memory/lessons/README.md": {
+      "sha256": "9eec70b77d18408e36e57fbd6c60e39bf704493b758027bad1b24edb2e739d84",
+      "template": "aidoc/memory/lessons/README.md"
+    },
+    "aiDoc/memory/lessons/TEMPLATE.md": {
+      "sha256": "6b0e24bab49b9afbbb185b6234018a9c984ef485db618b453936ee07e0193e43",
+      "template": "aidoc/memory/lessons/TEMPLATE.md"
+    },
+    "aiDoc/modules/architecture-rules.md": {
+      "sha256": "4db284e8e11f20550d584b0f884dd07012d4de7b12fe0640a2f1e4fe92ddf97d",
+      "template": "aidoc/modules/architecture-rules.md"
+    },
+    "aiDoc/notes/README.md": {
+      "sha256": "a5aed1c6eb77b94b18f4de55cc1f93b14bcb03144ccc4dc0bf1344ca7e14ccd3",
+      "template": "aidoc/notes/README.md"
+    },
+    "aiDoc/notes/TEMPLATE.md": {
+      "sha256": "46d54a57ab26845ec1bd42021fde67437cbdafca380dac925f3fa586c7abaf62",
+      "template": "aidoc/notes/TEMPLATE.md"
+    },
+    "aiDoc/plans/README.md": {
+      "sha256": "7917ef52a193f9a74850ed8056bb3660ff2d6e7b98668426ec003650e20caccd",
+      "template": "aidoc/plans/README.md"
+    },
+    "aiDoc/plans/change-plan.TEMPLATE.md": {
+      "sha256": "9fa7fb63e0162c91779db431e598f20d1436e8e9ab95ea2fdcdf38d0a77e058e",
+      "template": "aidoc/plans/change-plan.TEMPLATE.md"
+    },
+    "aiDoc/plans/handoff.TEMPLATE.md": {
+      "sha256": "3f8b5dbd4ddfdbd3cc072c9a2075042f45ddf1ff8342fedaa74bef2f5bc742f4",
+      "template": "aidoc/plans/handoff.TEMPLATE.md"
+    }
+  }
+}

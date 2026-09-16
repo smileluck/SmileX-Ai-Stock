@@ -185,7 +185,7 @@ SmileX-Fastapi-Cloud/
 - **新增后端文案**：在 `backend/core/i18n/locales/zh-CN.yaml` 与 `en-US.yaml` 同步增删 key，代码中用 `t("ns.key", **kwargs)`（支持 `{name}` 占位符）。
 - **新增一种语言**：在 `locales/` 下新增 `<locale>.yaml`，并把该 locale 加入配置 `I18N.SUPPORTED_LANGUAGES`，无需改代码。
 
-跨栈契约详见 [`aiDoc/frontend-backend/boundary.md`](./aiDoc/frontend-backend/boundary.md) 的「国际化」一节。
+跨栈契约详见 [`aiDoc/contracts/boundary.md`](./aiDoc/contracts/boundary.md) 的「国际化」一节。
 
 ## MCP 工具平台（可选）
 

@@ -86,7 +86,7 @@ frontend/
 ## 与后端的集成要点
 
 - **请求层**：`src/service/request/index.ts` 统一注入 `Authorization` 与 `Accept-Language`（取自 vue-i18n 当前 locale），后端按语言返回 `msg`，前端原样展示
-- **响应契约**：统一结构 `{ code, msg, data, request_id, err_code }` + 分页 `{ records, page, page_size, total, total_pages }`；`status` 字段 `bool ↔ "1"/"2"` 桥接。详见 [`../aiDoc/frontend-backend/boundary.md`](../aiDoc/frontend-backend/boundary.md)
+- **响应契约**：统一结构 `{ code, msg, data, request_id, err_code }` + 分页 `{ records, page, page_size, total, total_pages }`；`status` 字段 `bool ↔ "1"/"2"` 桥接。详见 [`../aiDoc/contracts/boundary.md`](../aiDoc/contracts/boundary.md)
 - **动态菜单 / 权限**：登录后拉取后端权限生成路由与菜单
 - **国际化**：`src/locales/langs/` 维护中英文，新增 key 需同步 `zh-cn.ts` 与 `en-us.ts`
 

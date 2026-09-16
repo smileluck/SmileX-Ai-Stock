@@ -1,14 +1,15 @@
+<!-- last-updated: 2026-09-15 -->
 # 项目定位与技术栈
 
 ## 项目定位
 
-SmileX-Fastapi-Cloud 是一个云原生智能机器人管理平台，核心能力包括：
+SmileX 是基于 FastAPI + Vue 3 的全栈云服务平台（仓库名 SmileX-AI-Stock），核心能力包括：
 
-- 设备管理与绑定
-- 机器人任务编排与状态监控
-- 紧急联系人管理
-- 系统管理（用户、角色、权限、菜单、字典、配置）
-- MCP 工具平台集成
+- 系统管理（用户、角色、权限、菜单、字典、配置、商户、多租户）
+- 调度任务（APScheduler，含内置同步任务）
+- 开放 API（openapi 模块，带签名鉴权）
+- A 股数据与 AI 分析业务：`stock`（行情/热搜）、`analysis`（分析报告）、`strategy`（策略与交易引擎）、`macro`（宏观）、`financial`（财报）、`research`（研报）、`agent`（AI 助手）
+- MCP 工具平台（独立组件 `mcp-platform/`）
 
 ## 后端技术栈
 
@@ -52,4 +53,4 @@ SmileX-Fastapi-Cloud 是一个云原生智能机器人管理平台，核心能�
 | JWT 会话 | Token + Redis 存储，支持刷新令牌 |
 | RBAC | 用户-角色-权限-菜单四级权限控制 |
 | MCP | 可选挂载 Model Context Protocol 服务端 |
-| Status 桥接 | 后端 `bool` ↔ 前端 `"1"`/`"2"` 字符串，详见 `aiDoc/frontend-backend/boundary.md` |
+| Status 桥接 | 后端 `bool` ↔ 前端 `"1"`/`"2"` 字符串，详见 `aiDoc/contracts/boundary.md` |

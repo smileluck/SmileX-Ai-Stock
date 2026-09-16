@@ -19,6 +19,7 @@
 | 工具 | 加载方式 |
 |---|---|
 | Claude Code | 根 `CLAUDE.md @AGENTS.md` 原生 import；`.claude/commands/` 只放项目命令，不生成规则适配文件 |
+| Kimi Code | 原生自动加载 `AGENTS.md`；项目级工作流技能放 `.agents/skills/`，无需适配文件 |
 | Trae | `.trae/rules/project_rules.md` 薄适配层指向 `AGENTS.MD` |
 | Cursor / Codex / 其他 | 若不支持 `@import`，参照 `.trae` 模式新建薄适配文件，只写入口指针，不复制规则正文 |
 
@@ -28,6 +29,7 @@
 
 - `backend/`: Python 3.11+ FastAPI + SQLAlchemy 2.0 后端
 - `frontend/`: Vue 3 + Vite + NaiveUI 前端
+- `mcp-platform/`: 独立 MCP 工具服务（FastMCP，uvicorn ASGI）
 - `aiDoc/`: AI 协作文档层（按任务路由加载，入口见 `aiDoc/README.md`）
 
 各 AI 工具目录（`.claude/`、`.trae/` 等）的加载方式见上文「各工具加载方式」。
@@ -48,7 +50,7 @@
 - 保持统一分页结构：`{ records, page, page_size, total, total_pages }`
 - 前后端字段名和数据类型保持一致
 - Status 字段桥接：后端 `bool` → 前端 `"1"` / `"2"` 字符串
-- 涉及跨栈边界变更时，同步更新 `aiDoc/frontend-backend/`
+- 涉及跨栈边界变更时，同步更新 `aiDoc/contracts/`（前端规范见 `aiDoc/frontend/`）
 
 ### 模块与目录
 
@@ -76,7 +78,8 @@
 - 细节上下文写入 `aiDoc/`
 - 结构关系放在 `aiDoc/relations/`
 - 示例写法放在 `aiDoc/examples/`
-- 长期记忆与业务记忆放在 `aiDoc/memory/`
+- 长期记忆与业务记忆放在 `aiDoc/memory/`，经验记忆（踩坑/模式）放在 `aiDoc/memory/lessons/`
+- 决策记录放在 `aiDoc/notes/`，变更计划与交接放在 `aiDoc/plans/`（纪律见各自 README）
 - "任务→必读文档"路由表唯一维护于 `aiDoc/README.md`，不在 `AGENTS.MD` 罗列文档清单
 - 若项目级 AI 规则发生变化，先改 `AGENTS.MD`，再按需更新「各工具加载方式」
 

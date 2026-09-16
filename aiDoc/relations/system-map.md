@@ -1,3 +1,4 @@
+<!-- last-updated: 2026-09-15 -->
 # 系统架构与组件关系
 
 ## 根目录职责
@@ -6,8 +7,10 @@
 |------|------|
 | `backend/` | FastAPI 应用，含模型、核心基础设施、业务模块 |
 | `frontend/` | Vue 3 应用，含工作区子包和页面组件 |
+| `mcp-platform/` | 独立 MCP 工具服务（FastMCP，uvicorn ASGI） |
 | `aiDoc/` | AI 协作文档层 |
-| `.trae/`、`.claude/`、`.cursor/` | 工具兼容适配层（不放项目规则） |
+| `deploy/` | 部署配置（nginx、systemd、部署脚本） |
+| `docs/` | 数据库文档（`docs/db/`） |
 
 ## 后端分层关系
 
@@ -22,22 +25,25 @@ main.py                            # 应用入口，注册路由、中间件、�
                       └─ base.py   # 公共基类（Base、DataClassBase、Mixin）
 ```
 
-### MCP 工具平台 `mcp/`
+### MCP 工具平台 `mcp-platform/`
+
+MCP 服务是独立组件（不再内嵌于 backend），backend 仅保留 `/admin/sys/mcp/*` 管理接口代理其 `/manage/*` 端点。
 
 | 目录/文件 | 职责 |
 |-----------|------|
-| `mcp/server.py` | FastMCP 服务器创建与 ASGI 挂载 |
-| `mcp/registry.py` | 工具注册表 + `@register_tool` 装饰器 + 自动发现 |
-| `mcp/context.py` | 鉴权上下文（`contextvars` 传播） |
-| `mcp/http_client.py` | 上游 HTTP 客户端（工具回调主应用 API） |
-| `mcp/result.py` | 结果辅助函数（`text_result`、`text_result_with_json`、`text_result_error`） |
-| `mcp/template.py` | 工具代码模板生成器 |
-| `mcp/standalone.py` | 独立进程管理（启动/停止/健康检查） |
-| `mcp/tools/` | 工具实现目录（自动发现） |
+| `mcp-platform/run.py` | 独立服务入口（uvicorn，优雅关闭） |
+| `mcp-platform/mcp_server/server.py` | FastMCP 服务器创建与 ASGI 挂载 |
+| `mcp-platform/mcp_server/registry.py` | 工具注册表 + `@register_tool` 装饰器 + 自动发现 |
+| `mcp-platform/mcp_server/context.py` | 鉴权上下文（`contextvars` 传播） |
+| `mcp-platform/mcp_server/http_client.py` | 上游 HTTP 客户端（工具回调主应用 API） |
+| `mcp-platform/mcp_server/result.py` | 结果辅助函数（`text_result`、`text_result_with_json`、`text_result_error`） |
+| `mcp-platform/mcp_server/template.py` | 工具代码模板生成器 |
+| `mcp-platform/mcp_server/manage.py` | `/manage/*` 管理端点（工具创建/列表/测试/关闭） |
+| `mcp-platform/mcp_server/tools/` | 工具实现目录（自动发现） |
 
 详细使用指南见 `aiDoc/modules/mcp-guide.md`。
 
-### 核心基础设施 `core/`
+### 核心基础设施 `backend/core/`
 
 | 目录 | 职责 |
 |------|------|
@@ -48,8 +54,11 @@ main.py                            # 应用入口，注册路由、中间件、�
 | `redis/` | Redis 连接管理 |
 | `log/` | 日志系统 |
 | `middleware/` | 中间件（请求追踪等） |
-| `health/` | 健康检查 |
+| `i18n/` | 后端文案国际化 |
 | `registry/` | 注册机制 |
+| `storage/` | 文件存储 |
+| `websocket/` | WebSocket 连接管理 |
+| `decorators/` | 通用装饰器 |
 | `utils/` | 工具函数 |
 
 ### 数据库层 `database/`
@@ -114,7 +123,13 @@ src/locales/langs/        # 国际化（zh-cn.ts、en-us.ts）
 | `backend/modules/admin/` | `frontend/src/views/manage/` |
 | `backend/modules/admin/endpoints/sys/login_log.py` | `frontend/src/views/log/login-log/` |
 | `backend/modules/admin/endpoints/sys/operation_log.py` | `frontend/src/views/log/operation-log/` |
-| `backend/modules/app/` | `frontend/src/views/`（应用页面） |
+| `backend/modules/app/` | `frontend/src/views/business/app-user/` |
+| `backend/modules/stock/` | `frontend/src/views/a-stock/` |
+| `backend/modules/agent/`、`backend/modules/analysis/` 等 AI 业务模块 | `frontend/src/views/ai/` |
+| `backend/modules/scheduler/` | `frontend/src/views/scheduler/` |
+| `backend/modules/admin/endpoints/sys/export_task.py`（异步执行由 scheduler 任务承担） | `frontend/src/views/export-record/` |
+| `backend/modules/openapi/` | `frontend/src/views/merchant-open/` |
+| `backend/modules/demo/` | `frontend/src/views/demo/` |
 
 ## 配置文件
 

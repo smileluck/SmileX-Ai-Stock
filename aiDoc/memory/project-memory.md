@@ -1,3 +1,4 @@
+<!-- last-updated: 2026-09-15 -->
 # 项目记忆索引
 
 本文件是 `aiDoc/memory/` 的总入口。
@@ -29,7 +30,7 @@
 - [2026-08-17 LLM 配置增加 MiniMax + 计费模式 + 拉取模型列表](./business/2026-08-17_ai_model_minimax_billing_mode.md) — 迁移 0019 加 minimax + billing_mode（智谱两模式端点不同需区分，(provider,mode) 默认URL字典）；新端点 POST /admin/sys/ai-model/models 拉取供应商模型列表（key 必填）；前端计费模式联动 + NAutoComplete 拉取选择；坑：MappedAsDataclass 新列用 insert_default
 - [2026-08-17 AI 分析预置策略 + 策略分类 + 成分股数据](./business/2026-08-17_preset_strategies.md) — 策略表加 `category`+`is_preset`；迁移 0016 预置 10 条策略（蓝筹带 30/20 固定池）；BaoStock 成分股同步 + Agent 工具 +2；**修复策略执行必挂的 4 个休眠 bug**：id 引用列 int32 溢出（0017 改 BigInteger）、ORM Enum name/value 序列化不匹配（values_callable）、CustomError(err_code=) 参数名错 13 处、异步 rollback 后属性过期 MissingGreenlet；前置：需在「LLM 配置」配默认模型
 - [2026-08-16 AI 分析策略模块](./business/2026-08-16_ai_strategy_module.md) — 策略定制（提示词/股票池/执行时段）+ LLM 买卖点信号（复用 agent 模块，场景 STOCK_PICKING）+ 模拟盘自动跟踪（止损/预估卖点自动平仓）+ 回报率统计；`modules/strategy/` 4 张表 + 迁移 0015 + 前端 `views/ai/analysis/` 三 Tab；坑：app.d.ts i18n Schema 手工维护须同步
-- [2026-08-16 A股数据"看似没同步"诊断与修复](./business/2026-08-16_astock_sync_diagnosis_and_fix.md) — 定时任务一直在跑；真实根因：东财 push2/push2his 按 **TLS 客户端指纹过滤**（curl 200 / Python httpx+requests 被断连，时开时关）致大盘资金流自上线 0 行 → 资金流改三级链 httpx 直连→curl_cffi(chrome 指纹)→akshare；暗盘活跃股 upsert 超 asyncpg 32767 参数上限 → `_chunked_upsert` 每批 800 行；新增 `scripts/sync_astock_latest.py` 手动补拉（交易日收盘后跑，非交易日会产生伪日期戳快照）
+- [2026-08-16 A股数据"看似没同步"诊断与修复](./business/2026-08-16_astock_sync_diagnosis_and_fix.md) — 定时任务一直在跑；真实根因：东财 push2/push2his 按 **TLS 客户端指纹过滤**（curl 200 / Python httpx+requests 被断连，时开时关）致大盘资金流自上线 0 行 → 资金流改三级链 httpx 直连→curl_cffi(chrome 指纹)→akshare；暗盘活跃股 upsert 超 asyncpg 32767 参数上限 → `_chunked_upsert` 每批 800 行；新增 `backend/scripts/sync_astock_latest.py` 手动补拉（交易日收盘后跑，非交易日会产生伪日期戳快照）
 - [2026-08-12 暗盘跟踪（大宗交易）模块](./business/2026-08-12_block_trade_module.md) — A股目录下新增「暗盘跟踪」；澄清「暗盘」=「大宗交易」（东方财富无公开「暗盘」接口，A股语境下非正式指代大宗交易/dark pool），数据源 akshare `stock_dzjy_mrtj`（每日统计）+ `stock_dzjy_hygtj`（活跃A股，4 窗口）；3 张表（daily/active/sync_log），upsert on_conflict_do_update，cron `40 15 * * mon-fri`；不纳入逐笔明细/营业部排行
 - [2026-08-12 调试模式日志按天划分](./business/2026-08-12_log_rollover_midnight_fix.md) — `when='D'` 实为「启动时刻+24h」滚动且重启即重置（uvicorn reload 下永不触发），三处配置统一改 `'MIDNIGHT'` 按自然日切分；`DailyDirFileHandler` 补日期目录清理（父类认不出日期子目录，`backupCount` 此前不生效）
 - [2026-08-12 股票热榜开盘时段每 5 分钟同步](./business/2026-08-12_stock_hot_5min_sync.md) — 热榜抓取 cron 改 `*/5 9-15 * * mon-fri` + 任务内交易时段守卫（9:30-11:30、13:00-15:00）；顺带修 APScheduler 星期坑（数字 `1-5`=周二至周六漏周一），三个收盘行情任务改 `mon-fri`
