@@ -471,3 +471,17 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 执行分流：`POST /strategies/{id}/run` 与调度任务 `strategy.run_execute` 按 strategy_type 分流——rule 型走 `RuleExecutor`（复用 StrategyExecutor submit_run 异步模式：并发守卫 11508/同日同时段去重口径一致，**无 LLM 调用**，universe=股票池∪当前持仓，因子取最近交易日 lookback=120），Run 的 `ai_raw_response` 为规则评估摘要文本（基准日/条件/信号计数/告警）；买入信号 `ref_buy_price`=基准日收盘价、止损/目标价按策略 pct 折算；信号口径与 prompt 型一致（落 business_strategy_signal 由每分钟交易引擎执行）
 - 回测分流：`POST /admin/backtest/run` 按 strategy_type 分流——prompt=`recorded_replay`（回放区间内已记录真实信号，口径不变），rule=`rule_daily_eval`（逐交易日 D 用截至 D-1 数据评估自产信号、D 日开盘成交，**严格无未来函数**；每票 bars 一次载入、因子经 `formula.py calc_factor_series` 全历史序列一次算好，RANK 按交易日逐日跨 universe 截面）；两模式均在 `result.warnings` 首条标注；BacktestItem 契约不变；rule 型 submit 即校验空池/无买入条件（11511/11510）
 - 前端：策略抽屉顶部「策略类型」单选（编辑时禁用）、rule 型隐藏提示词改显买入/卖出两组条件构建器（共享组件 `src/components/common/factor-condition-builder.vue`，选股器同用——选股器传 allow-top-n，策略规则不传）、股票池 rule 型必填提示、列表名称列「规则」tag；回测页策略下拉标注 [AI]/[规则] + 模式说明文案；typings `Api.Strategy.{StrategyType,RuleOp,RuleCondition,RuleConfig}`
+
+---
+
+## 绩效深化（P3，2026-09-16，迁移 0037）
+
+- `business_strategy_position` 加 `run_id`（BigInteger 可空，索引 `ix_strategy_position_run`）——建仓来源执行记录 ID，交易引擎建仓时写入 `sig.run_id`；存量为 NULL 不回填（归因归 unknown 组）
+- `business_backtest` 加 `slippage_model`（String(20) NOT NULL 默认 `'fixed'`，server_default 回填后去除，仿 0035/0036）
+- `GET /admin/strategy/positions/stats` 每项新增 `compound_return_rate: number|null`——**复利口径**（closed 持仓按 sell_time 升序逐笔 `(1+r/100)` 连乘 -1，%），与既有 `total_return_rate`（加总口径=逐笔简单求和）并存；无平仓为 null
+- 新端点（挂在 `stats_router`，权限复用 `strategy:position:list`，`strategy_id` 必填，策略不存在 11501）：
+  - `GET /admin/strategy/stats/equity-curve?strategy_id` → `[{date, equity, holding_count}]`：等权平均净值（基准 100），按持仓跟踪日志逐日取每股末条、持有期内前向填充；**建仓日记 0、卖出日锁定最终 return_rate 终止**；只输出有 track log 的日期（非交易日历）
+  - `GET /admin/strategy/stats/attribution?strategy_id` → `{by_sell_reason: [{reason, count, win_rate, avg_return, total_return}], by_run_period: [{period, ...同上}]}`；by_sell_reason 仅 closed 持仓；**by_run_period 含 holding 浮盈**（period=建仓 run 的 execute_period），存量 run_id=NULL 归 `unknown` 组
+- 回测滑点模型：`POST /admin/backtest/run` body 加 `slippage_model: fixed|amp`（默认 fixed）；fixed=slippage_pct 直接为滑点%（上限 10）；amp=振幅比例，**实际滑点=当日振幅(high-low)/preclose×slippage_pct/100**（缺 preclose/高低价回退 fixed 口径），slippage_pct 作系数上限 50；越界均报 11703（无新错误码）；`BacktestItem` 带 `slippage_model`
+- 回测僵死恢复：TradeEngine `execute_tick` 维护段新增——`status=running` 且 `coalesce(started_at, created_at) < now-20min`（`BACKTEST_STALE_MINUTES=20`）的回测置 `failed`，error_msg=「执行超时（超过 20 分钟未完成，疑似进程重启）」，计数 `expired_stale_backtests`；与存量 run/信号超时清理同段同 commit
+- 前端：回报率统计 Tab 加「复利收益率」列（IconTooltip 说明两口径差异）+ 策略选择器联动净值曲线图与归因双卡（按卖出原因/按执行时段，红涨绿跌，unknown=历史未知）；回测发起表单高级参数加滑点模型单选（amp 时 label/上限/提示切换）；详情抽屉头部加滑点模型 tag；**`equity-chart.vue` 从 `views/ai/backtest/modules/` 提升为公共组件 `src/components/common/equity-chart.vue`**（holding_count 走副轴半透明柱，回测/模拟盘两处共用，auto-import 生效）

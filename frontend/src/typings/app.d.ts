@@ -1680,6 +1680,18 @@ declare namespace App {
         avgReturn: string;
         bestReturn: string;
         worstReturn: string;
+        compoundReturn: string;
+        compoundTip: string;
+        equityCurve: string;
+        statsSelectStrategy: string;
+        bySellReason: string;
+        byRunPeriod: string;
+        attrName: string;
+        attrCount: string;
+        attrTotalReturn: string;
+        holdingCountCol: string;
+        periodReview: string;
+        periodUnknown: string;
         openedCount: string;
         execTime: string;
         execPeriod: string;
@@ -1691,6 +1703,7 @@ declare namespace App {
         reasonStopLoss: string;
         reasonTakeProfit: string;
         reasonTarget: string;
+        reasonTrailingStop: string;
         reasonAi: string;
         reasonManual: string;
         form: {
@@ -1731,6 +1744,11 @@ declare namespace App {
         formCapital: string;
         advanced: string;
         slippage: string;
+        slippageModel: string;
+        slippageFixed: string;
+        slippageAmp: string;
+        slippageAmpLabel: string;
+        slippageAmpTip: string;
         commission: string;
         stampTax: string;
         submit: string;

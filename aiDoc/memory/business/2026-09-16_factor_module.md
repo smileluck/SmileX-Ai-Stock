@@ -26,7 +26,7 @@
 - 试算：因子+多代码（或从策略股票池带入）+目标日+回看天数 → /calc 结果表 + warnings
 - 选股器：股票池（手动 codes / 策略股票池）+ 动态条件行（因子+运算符含前N名+数值）→ /screen，结果可一键「存为策略股票池」（/screen/save-pool 覆盖更新）
 - typings `api/factor.d.ts`、api 函数 `service/api/factor.ts`、i18n `page.aiFactor.*` 双语 + app.d.ts 类型已同步
-- status 用 boolean 直传（同 strategy 模块，无 "1"/"2" 桥接）；菜单项需后台手工新增指向 /ai/factor
+- status 用 boolean 直传（同 strategy 模块，无 "1"/"2" 桥接）；菜单项已通过迁移 0038 播种（ai_factor，/ai/factor，sort 13，权限 strategy:manage）
 
 ## 约束与备注
 

@@ -26,7 +26,7 @@
 - API `service/api/backtest.ts`（5 个 fetch* 函数，注册进 index.ts）+ 类型 `typings/api/backtest.d.ts`（Api.Backtest 命名空间，status 为字符串三态无需桥接）
 - i18n `page.aiBacktest.*`（zh/en）+ route key `ai_backtest`，app.d.ts Schema 已同步
 - 路由由 `@elegant-router/vue` vite 插件在构建时自动生成（meta title=key/i18nKey=route.key，icon/order 走后端菜单 DB 同 ai_analysis）；`pnpm gen-route`（sa gen-route）实为交互式新建页面脚手架，既有页面不适用
-- 菜单项需后台菜单库手工新增（指向 /ai/backtest，权限可复用 strategy:manage）
+- 菜单项已通过迁移 0038 播种（ai_backtest，/ai/backtest，sort 12，权限 strategy:manage）；超管直接可见，其他角色仍需在角色管理页勾选
 
 ## 约束与备注
 

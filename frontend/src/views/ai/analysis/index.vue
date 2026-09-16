@@ -817,7 +817,7 @@ watch(strategyFilterOptions, opts => {
 });
 
 /** 归因-卖出原因中文化（缺组时回退原始值） */
-const SELL_REASON_LABEL: Record<string, string> = {
+const ATTR_REASON_LABEL: Record<string, string> = {
   stop_loss: $t('page.aiStrategy.reasonStopLoss'),
   target_reached: $t('page.aiStrategy.reasonTarget'),
   trailing_stop: $t('page.aiStrategy.reasonTrailingStop'),
@@ -826,7 +826,7 @@ const SELL_REASON_LABEL: Record<string, string> = {
 };
 
 /** 归因-执行时段中文化（unknown = 存量 run_id 为 NULL 的历史持仓） */
-const RUN_PERIOD_LABEL: Record<string, string> = {
+const ATTR_PERIOD_LABEL: Record<string, string> = {
   pre_market: $t('page.aiStrategy.periodPreMarket'),
   morning: $t('page.aiStrategy.periodMorning'),
   noon: $t('page.aiStrategy.periodNoon'),
@@ -871,10 +871,10 @@ function attributionColumns<T extends Api.Strategy.AttributionMetrics>(labelOf: 
 }
 
 const sellReasonColumns = attributionColumns<Api.Strategy.SellReasonAttributionItem>(
-  row => SELL_REASON_LABEL[row.reason] ?? row.reason
+  row => ATTR_REASON_LABEL[row.reason] ?? row.reason
 );
 const runPeriodColumns = attributionColumns<Api.Strategy.RunPeriodAttributionItem>(
-  row => RUN_PERIOD_LABEL[row.period] ?? row.period
+  row => ATTR_PERIOD_LABEL[row.period] ?? row.period
 );
 
 const statsColumns = computed<DataTableColumns<Api.Strategy.StrategyStatsItem>>(() => [
