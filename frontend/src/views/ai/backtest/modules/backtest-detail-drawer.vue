@@ -5,7 +5,7 @@ import type { DataTableColumns } from 'naive-ui';
 import { fetchGetBacktestDetail, fetchGetBacktestTrades } from '@/service/api';
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { $t } from '@/locales';
-import EquityChart from './equity-chart.vue';
+import EquityChart from '@/components/common/equity-chart.vue';
 
 /**
  * 回测详情抽屉：绩效卡片网格 + 收益曲线 + 告警 + 成交明细分页表
@@ -225,6 +225,10 @@ const tradeColumns = computed<DataTableColumns<Api.Backtest.BacktestTradeItem>>(
       <div v-if="detail" class="flex-col-stretch gap-16px">
         <NSpace align="center" :size="12">
           <NTag :type="STATUS_TAG[detail.status]" :bordered="false">{{ STATUS_LABEL[detail.status] }}</NTag>
+          <NTag size="small" :bordered="false" type="default">
+            {{ $t('page.aiBacktest.slippageModel') }}:
+            {{ detail.slippage_model === 'amp' ? $t('page.aiBacktest.slippageAmp') : $t('page.aiBacktest.slippageFixed') }}
+          </NTag>
           <NText depth="3" class="text-12px">{{ detail.start_date }} ~ {{ detail.end_date }}</NText>
           <NText depth="3" class="text-12px">
             {{ $t('page.aiBacktest.formCapital') }}: {{ fmtMoney(detail.initial_capital) }}

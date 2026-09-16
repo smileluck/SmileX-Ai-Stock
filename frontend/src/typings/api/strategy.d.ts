@@ -195,10 +195,44 @@ declare namespace Api {
       win_count: number;
       loss_count: number;
       win_rate: number | null;
+      /** 加总口径：逐笔收益率简单求和(%) */
       total_return_rate: number | null;
+      /** 复利口径：逐笔收益率按卖出时间复利累积(%)，无平仓为 null */
+      compound_return_rate: number | null;
       avg_return_rate: number | null;
       best_return_rate: number | null;
       worst_return_rate: number | null;
+    }
+
+    /** 模拟盘净值曲线点（只含持仓跟踪日志覆盖的日期） */
+    export interface EquityCurvePoint {
+      date: string;
+      equity: number;
+      holding_count: number;
+    }
+
+    /** 归因公共指标 */
+    export interface AttributionMetrics {
+      count: number;
+      win_rate: number | null;
+      avg_return: number | null;
+      total_return: number | null;
+    }
+
+    /** 归因分组项-按卖出原因 */
+    export interface SellReasonAttributionItem extends AttributionMetrics {
+      reason: string;
+    }
+
+    /** 归因分组项-按执行时段（period 含 unknown：存量 run_id 为 NULL 的历史持仓） */
+    export interface RunPeriodAttributionItem extends AttributionMetrics {
+      period: string;
+    }
+
+    /** 归因结果 */
+    export interface AttributionResult {
+      by_sell_reason: SellReasonAttributionItem[];
+      by_run_period: RunPeriodAttributionItem[];
     }
   }
 }

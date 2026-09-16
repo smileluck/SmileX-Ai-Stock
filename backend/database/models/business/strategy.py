@@ -201,6 +201,7 @@ class BusinessStrategyPosition(Base):
     __table_args__ = (
         Index("ix_strategy_position_strategy_status", "strategy_id", "status"),
         Index("ix_strategy_position_stock", "stock_code"),
+        Index("ix_strategy_position_run", "run_id"),
         {"comment": "策略个股模拟持仓表"},
     )
 
@@ -267,6 +268,10 @@ class BusinessStrategyPosition(Base):
     )
     return_rate: Mapped[Optional[float]] = mapped_column(
         Numeric(10, 4), nullable=True, default=None, comment="最终收益率(%)，平仓时计算"
+    )
+    run_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True, default=None,
+        comment="建仓来源执行记录 ID（2026-09-16 起写入，存量为 NULL）",
     )
 
 

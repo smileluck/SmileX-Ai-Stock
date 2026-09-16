@@ -117,6 +117,24 @@ export function fetchGetStrategyStats(strategyId?: number) {
   });
 }
 
+/** get simulated-position equity curve (dates covered by track logs only) */
+export function fetchGetStrategyEquityCurve(strategyId: number) {
+  return request<Api.Strategy.EquityCurvePoint[]>({
+    url: '/admin/strategy/stats/equity-curve',
+    method: 'get',
+    params: { strategy_id: strategyId }
+  });
+}
+
+/** get strategy performance attribution (by sell reason / by run period) */
+export function fetchGetStrategyAttribution(strategyId: number) {
+  return request<Api.Strategy.AttributionResult>({
+    url: '/admin/strategy/stats/attribution',
+    method: 'get',
+    params: { strategy_id: strategyId }
+  });
+}
+
 /** clone a strategy (copy is disabled by default, name gets a （副本） suffix) */
 export function fetchCloneStrategy(strategyId: number) {
   return request<Api.Strategy.StrategyItem>({

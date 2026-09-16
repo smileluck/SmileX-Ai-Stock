@@ -74,6 +74,7 @@ def run_replay(
     slippage_pct: float,
     commission_pct: float,
     stamp_tax_pct: float,
+    slippage_model: str = "fixed",
     stop_loss_pct: Optional[float] = None,
     take_profit_pct: Optional[float] = None,
     trailing_drawdown_pct: Optional[float] = None,
@@ -85,8 +86,11 @@ def run_replay(
         signals: 已按 run_date+id 升序的信号列表，每项含
             stock_code/stock_name/action(buy/sell/adjust)/run_date/
             target_sell_price/stop_loss_price/reason；adjust 与未知动作在此被忽略
-        bars_by_code: {stock_code: {date: bar}}，bar 含 open/high/low/close/pct_chg
+        bars_by_code: {stock_code: {date: bar}}，bar 含 open/high/low/close/preclose/pct_chg
         trading_days: 交易日序列（YYYY-MM-DD 升序），来自上证指数日线
+        slippage_model: fixed-固定百分比（slippage_pct 直接为滑点%）；
+            amp-振幅比例（当日实际滑点% = 当日振幅(high-low)/preclose×100 × slippage_pct/100，
+            即 slippage_pct 改作振幅系数，默认 10 意为振幅的 10%）
         warnings: 外部已收集的告警（北交所跳过等），本函数会追加
 
     Returns:
@@ -95,6 +99,15 @@ def run_replay(
     warnings = warnings if warnings is not None else []
     cash = float(initial_capital)
     position_budget = float(initial_capital) / max(max_positions, 1)
+
+    def _slippage(bar: dict) -> float:
+        """当日实际滑点%：amp 模式按当日振幅折算，数据缺失回退固定值"""
+        if slippage_model != "amp":
+            return slippage_pct
+        high, low, preclose = bar.get("high"), bar.get("low"), bar.get("preclose")
+        if high and low and preclose:
+            return (high - low) / preclose * 100 * slippage_pct / 100
+        return slippage_pct
 
     # stock_code -> 持仓 dict
     positions: dict[str, dict[str, Any]] = {}
@@ -143,7 +156,7 @@ def run_replay(
                     continue
                 if pos["buy_date"] == day:
                     continue  # T+1：当日买入不可卖，顺延
-                sell_price = round(open_price * (1 - slippage_pct / 100), 4)
+                sell_price = round(open_price * (1 - _slippage(bar) / 100), 4)
                 _close_position(code, pos, day, sell_price, "ai_signal")
                 pending.remove(sig)
                 continue
@@ -155,7 +168,7 @@ def run_replay(
                 if len(positions) >= max_positions:
                     pending.remove(sig)  # 达最大持仓数，跳过
                     continue
-                buy_price = round(open_price * (1 + slippage_pct / 100), 4)
+                buy_price = round(open_price * (1 + _slippage(bar) / 100), 4)
                 quantity = int(position_budget / buy_price / 100) * 100
                 if quantity <= 0:
                     pending.remove(sig)

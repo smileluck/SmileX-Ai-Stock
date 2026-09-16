@@ -13,7 +13,7 @@
 import logging
 from datetime import datetime, time as dt_time, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models.business.strategy import (
@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 # 僵死 running 记录判定阈值（分析任务自带 ANALYSIS_TIMEOUT 兜底，
 # 超过该时长仍是 running 必为进程重启或异常中断）
 STALE_RUN_MINUTES = 15
+
+# 僵死 running 回测判定阈值（回测自带 BACKTEST_TIMEOUT=900s 兜底，20 分钟留余量）
+BACKTEST_STALE_MINUTES = 20
 
 # 信号过期时点：收盘后 15:05，作废 run_date 早于今日的滞留信号
 # （当日盘后分析产生的信号 run_date=今日，仍保留至下一交易日执行）
@@ -117,6 +120,26 @@ class TradeEngine:
         )
         total["expired_stale_runs"] = result.rowcount or 0
 
+        # ---- 1b. 僵死 running 回测恢复（同样照 STALE_RUN_MINUTES 模式） ----
+        from database.models.business.backtest import BusinessBacktest
+
+        stale_bt_before = now - timedelta(minutes=BACKTEST_STALE_MINUTES)
+        result = await db.execute(
+            update(BusinessBacktest)
+            .where(
+                BusinessBacktest.status == "running",
+                func.coalesce(BusinessBacktest.started_at, BusinessBacktest.created_at) < stale_bt_before,
+                BusinessBacktest.deleted_at.is_(None),
+            )
+            .values(
+                status="failed",
+                error_msg=f"执行超时（超过 {BACKTEST_STALE_MINUTES} 分钟未完成，疑似进程重启）",
+                finished_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        total["expired_stale_backtests"] = result.rowcount or 0
+
         # ---- 2. 信号过期：收盘后作废昨日及更早的滞留信号 ----
         if now.time() >= SIGNAL_EXPIRE_TIME:
             today = now.strftime("%Y-%m-%d")
@@ -133,7 +156,7 @@ class TradeEngine:
             total["expired_signals"] = result.rowcount or 0
 
         # 维护性变更先落库（即使后续交易步骤异常也不回滚）
-        if total["expired_stale_runs"] or total["expired_signals"]:
+        if total["expired_stale_runs"] or total["expired_signals"] or total["expired_stale_backtests"]:
             await db.commit()
 
         # ---- 3. 非交易时段：仅做维护动作 ----
@@ -253,6 +276,7 @@ class TradeEngine:
                     buy_price=price,
                     buy_time=now,
                     buy_reason=sig.reason,
+                    run_id=sig.run_id,
                     target_sell_price=target_sell,
                     stop_loss_price=stop_loss,
                     trailing_drawdown_pct=strategy.trailing_drawdown_pct,

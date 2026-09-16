@@ -8,12 +8,15 @@ import {
   NDrawer,
   NDrawerContent,
   NDynamicTags,
+  NGi,
+  NGrid,
   NInput,
   NModal,
   NPagination,
   NPopconfirm,
   NSelect,
   NSpace,
+  NSpin,
   NStatistic,
   NTabPane,
   NTabs,
@@ -28,6 +31,8 @@ import {
   fetchCreateStrategy,
   fetchDeleteStrategy,
   fetchExportStrategy,
+  fetchGetStrategyAttribution,
+  fetchGetStrategyEquityCurve,
   fetchGetStrategyList,
   fetchGetStrategyPositions,
   fetchGetStrategyRuns,
@@ -41,6 +46,8 @@ import {
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { useAppStore } from '@/store/modules/app';
 import { $t } from '@/locales';
+import EquityChart from '@/components/common/equity-chart.vue';
+import IconTooltip from '@/components/common/icon-tooltip.vue';
 import StrategyOperateDrawer from './modules/strategy-operate-drawer.vue';
 import StrategyTemplate from './modules/strategy-template.vue';
 
@@ -751,6 +758,13 @@ const positionColumns = computed<DataTableColumns<Api.Strategy.PositionItem>>(()
 const statsList = ref<Api.Strategy.StrategyStatsItem[]>([]);
 const statsLoading = ref(false);
 
+/** 净值曲线 / 归因的策略选择（必填，独立于表格筛选） */
+const statsStrategyId = ref<number | null>(null);
+const equityCurve = ref<Api.Strategy.EquityCurvePoint[]>([]);
+const curveLoading = ref(false);
+const attribution = ref<Api.Strategy.AttributionResult | null>(null);
+const attributionLoading = ref(false);
+
 async function loadStats(silent = false) {
   if (!silent) statsLoading.value = true;
   try {
@@ -760,6 +774,108 @@ async function loadStats(silent = false) {
     if (!silent) statsLoading.value = false;
   }
 }
+
+async function loadEquityCurve() {
+  if (!statsStrategyId.value) {
+    equityCurve.value = [];
+    return;
+  }
+  curveLoading.value = true;
+  try {
+    const { data, error } = await fetchGetStrategyEquityCurve(statsStrategyId.value);
+    if (!error) equityCurve.value = data ?? [];
+  } finally {
+    curveLoading.value = false;
+  }
+}
+
+async function loadAttribution() {
+  if (!statsStrategyId.value) {
+    attribution.value = null;
+    return;
+  }
+  attributionLoading.value = true;
+  try {
+    const { data, error } = await fetchGetStrategyAttribution(statsStrategyId.value);
+    if (!error) attribution.value = data ?? null;
+  } finally {
+    attributionLoading.value = false;
+  }
+}
+
+// 策略选择变化时联动刷新净值曲线与归因
+watch(statsStrategyId, () => {
+  loadEquityCurve();
+  loadAttribution();
+});
+
+// 选项晚于 Tab 加载完成时补默认值
+watch(strategyFilterOptions, opts => {
+  if (activeTab.value === 'stats' && !statsStrategyId.value && opts.length) {
+    statsStrategyId.value = opts[0].value;
+  }
+});
+
+/** 归因-卖出原因中文化（缺组时回退原始值） */
+const SELL_REASON_LABEL: Record<string, string> = {
+  stop_loss: $t('page.aiStrategy.reasonStopLoss'),
+  target_reached: $t('page.aiStrategy.reasonTarget'),
+  trailing_stop: $t('page.aiStrategy.reasonTrailingStop'),
+  ai_signal: $t('page.aiStrategy.reasonAi'),
+  manual: $t('page.aiStrategy.reasonManual')
+};
+
+/** 归因-执行时段中文化（unknown = 存量 run_id 为 NULL 的历史持仓） */
+const RUN_PERIOD_LABEL: Record<string, string> = {
+  pre_market: $t('page.aiStrategy.periodPreMarket'),
+  morning: $t('page.aiStrategy.periodMorning'),
+  noon: $t('page.aiStrategy.periodNoon'),
+  tail: $t('page.aiStrategy.periodTail'),
+  post_close: $t('page.aiStrategy.periodPostClose'),
+  manual: $t('page.aiStrategy.periodManual'),
+  review: $t('page.aiStrategy.periodReview'),
+  unknown: $t('page.aiStrategy.periodUnknown')
+};
+
+function attributionColumns<T extends Api.Strategy.AttributionMetrics>(labelOf: (row: T) => string) {
+  return computed<DataTableColumns<T>>(() => [
+    {
+      key: 'name',
+      title: $t('page.aiStrategy.attrName'),
+      minWidth: 90,
+      render: row => <span class="font-500">{labelOf(row)}</span>
+    },
+    { key: 'count', title: $t('page.aiStrategy.attrCount'), width: 70, align: 'right' },
+    {
+      key: 'win_rate',
+      title: $t('page.aiStrategy.winRate'),
+      width: 80,
+      align: 'right',
+      render: row => (row.win_rate === null ? <NText depth={3}>-</NText> : <span>{`${Number(row.win_rate).toFixed(1)}%`}</span>)
+    },
+    {
+      key: 'avg_return',
+      title: $t('page.aiStrategy.avgReturn'),
+      width: 90,
+      align: 'right',
+      render: row => renderPct(row.avg_return)
+    },
+    {
+      key: 'total_return',
+      title: $t('page.aiStrategy.attrTotalReturn'),
+      width: 100,
+      align: 'right',
+      render: row => renderPct(row.total_return)
+    }
+  ]);
+}
+
+const sellReasonColumns = attributionColumns<Api.Strategy.SellReasonAttributionItem>(
+  row => SELL_REASON_LABEL[row.reason] ?? row.reason
+);
+const runPeriodColumns = attributionColumns<Api.Strategy.RunPeriodAttributionItem>(
+  row => RUN_PERIOD_LABEL[row.period] ?? row.period
+);
 
 const statsColumns = computed<DataTableColumns<Api.Strategy.StrategyStatsItem>>(() => [
   {
@@ -797,6 +913,18 @@ const statsColumns = computed<DataTableColumns<Api.Strategy.StrategyStatsItem>>(
     width: 110,
     align: 'right',
     render: row => renderPct(row.total_return_rate)
+  },
+  {
+    key: 'compound_return_rate',
+    title: () => (
+      <span class="inline-flex items-center gap-2px">
+        {$t('page.aiStrategy.compoundReturn')}
+        <IconTooltip desc={$t('page.aiStrategy.compoundTip')} />
+      </span>
+    ),
+    width: 110,
+    align: 'right',
+    render: row => renderPct(row.compound_return_rate)
   },
   {
     key: 'avg_return_rate',
@@ -837,7 +965,13 @@ const { lastRefreshTime } = useAutoRefresh(
 
 watch(activeTab, tab => {
   if (tab === 'positions') loadPositions();
-  if (tab === 'stats') loadStats();
+  if (tab === 'stats') {
+    loadStats();
+    // 默认选中首个策略以联动净值曲线与归因
+    if (!statsStrategyId.value && strategyFilterOptions.value.length) {
+      statsStrategyId.value = strategyFilterOptions.value[0].value;
+    }
+  }
 });
 
 onMounted(() => {
@@ -1031,9 +1165,55 @@ onMounted(() => {
           :data="statsList"
           size="small"
           :loading="statsLoading"
-          :scroll-x="1100"
+          :scroll-x="1250"
           :row-key="(row: Api.Strategy.StrategyStatsItem) => row.strategy_id"
         />
+
+        <!-- 净值曲线 + 归因（按选定策略联动） -->
+        <NSpace align="center" :size="12" class="mb-12px mt-16px">
+          <NText class="font-500">{{ $t('page.aiStrategy.equityCurve') }}</NText>
+          <NSelect
+            v-model:value="statsStrategyId"
+            size="small"
+            filterable
+            :placeholder="$t('page.aiStrategy.filterStrategy')"
+            :options="strategyFilterOptions"
+            class="w-200px"
+          />
+        </NSpace>
+        <template v-if="statsStrategyId">
+          <NSpin :show="curveLoading">
+            <EquityChart v-if="equityCurve.length" :data="equityCurve" />
+            <div v-else class="h-60px flex-center">
+              <NText depth="3" class="text-12px">{{ $t('common.noData') }}</NText>
+            </div>
+          </NSpin>
+          <NGrid :cols="2" :x-gap="16" responsive="screen" item-responsive class="mt-16px">
+            <NGi span="2 m:1">
+              <NText class="mb-8px block font-500">{{ $t('page.aiStrategy.bySellReason') }}</NText>
+              <NDataTable
+                :columns="sellReasonColumns"
+                :data="attribution?.by_sell_reason ?? []"
+                size="small"
+                :loading="attributionLoading"
+                :row-key="(row: Api.Strategy.SellReasonAttributionItem) => row.reason"
+              />
+            </NGi>
+            <NGi span="2 m:1">
+              <NText class="mb-8px block font-500">{{ $t('page.aiStrategy.byRunPeriod') }}</NText>
+              <NDataTable
+                :columns="runPeriodColumns"
+                :data="attribution?.by_run_period ?? []"
+                size="small"
+                :loading="attributionLoading"
+                :row-key="(row: Api.Strategy.RunPeriodAttributionItem) => row.period"
+              />
+            </NGi>
+          </NGrid>
+        </template>
+        <div v-else class="mt-8px">
+          <NText depth="3" class="text-12px">{{ $t('page.aiStrategy.statsSelectStrategy') }}</NText>
+        </div>
       </template>
     </NCard>
 

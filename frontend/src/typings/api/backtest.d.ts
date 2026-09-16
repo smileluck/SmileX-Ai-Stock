@@ -3,6 +3,9 @@ declare namespace Api {
     /** 回测状态（字符串三态，无需 1/2 桥接） */
     export type BacktestStatus = 'running' | 'success' | 'failed';
 
+    /** 滑点模型：fixed-固定百分比，amp-振幅比例（slippage_pct 改作振幅系数） */
+    export type SlippageModel = 'fixed' | 'amp';
+
     /** 绩效汇总（result JSON） */
     export interface BacktestResult {
       /** 总收益率(%) */
@@ -46,6 +49,7 @@ declare namespace Api {
       end_date: string;
       initial_capital: number;
       slippage_pct: number;
+      slippage_model: SlippageModel;
       commission_pct: number;
       stamp_tax_pct: number;
       status: BacktestStatus;
@@ -68,6 +72,8 @@ declare namespace Api {
       end_date: string;
       initial_capital: number;
       slippage_pct: number;
+      /** 不传默认为 fixed */
+      slippage_model?: SlippageModel;
       commission_pct: number;
       stamp_tax_pct: number;
     }

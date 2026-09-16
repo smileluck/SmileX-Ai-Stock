@@ -91,6 +91,7 @@ class BacktestService:
             end_date=req.end_date,
             initial_capital=req.initial_capital,
             slippage_pct=req.slippage_pct,
+            slippage_model=req.slippage_model,
             commission_pct=req.commission_pct,
             stamp_tax_pct=req.stamp_tax_pct,
             status="running",

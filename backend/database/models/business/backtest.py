@@ -74,6 +74,10 @@ class BusinessBacktest(Base):
     finished_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None, comment="执行完成时间"
     )
+    slippage_model: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="fixed",
+        comment="滑点模型：fixed-固定百分比，amp-振幅比例（slippage_pct 改作振幅系数）",
+    )
 
 
 class BusinessBacktestTrade(Base):

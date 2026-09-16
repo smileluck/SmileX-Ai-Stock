@@ -137,6 +137,7 @@ class BacktestRunner:
             initial_capital=float(backtest.initial_capital),
             max_positions=strategy.max_positions,
             slippage_pct=float(backtest.slippage_pct),
+            slippage_model=backtest.slippage_model,
             commission_pct=float(backtest.commission_pct),
             stamp_tax_pct=float(backtest.stamp_tax_pct),
             stop_loss_pct=float(strategy.stop_loss_pct) if strategy.stop_loss_pct is not None else None,

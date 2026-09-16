@@ -293,6 +293,50 @@ class StrategyStatsItem(BaseModel):
     loss_count: int = 0
     win_rate: Optional[float] = None  # 胜率(%)，无平仓记录时为空
     total_return_rate: Optional[float] = None  # 累计收益率(%)，各笔等权简单加总
+    compound_return_rate: Optional[float] = None  # 复利口径总收益率(%)：平仓笔按 sell_time 升序 cumprod(1+r/100)-1
     avg_return_rate: Optional[float] = None  # 平均单笔收益率(%)
     best_return_rate: Optional[float] = None
     worst_return_rate: Optional[float] = None
+
+
+# ----------------------------------------------------------------------
+# 模拟盘绩效深化（净值曲线 / 归因）
+# ----------------------------------------------------------------------
+
+class EquityCurvePoint(BaseModel):
+    """模拟盘净值曲线点：等权平均口径（模拟盘无资金概念，每笔一手）
+
+    每日净值 = 当日处于持有期的全部持仓「当日最新已知浮盈%」的等权平均 + 100 基准；
+    只输出有跟踪数据的日期（周末/无跟踪日跳过）
+    """
+
+    date: str
+    equity: float
+    holding_count: int  # 当日纳入均值的持仓数
+
+
+class SellReasonAttributionItem(BaseModel):
+    """按卖出原因归因（仅已平仓持仓）"""
+
+    reason: str  # stop_loss/target_reached/trailing_stop/ai_signal/manual
+    count: int
+    win_rate: Optional[float] = None
+    avg_return: Optional[float] = None
+    total_return: Optional[float] = None
+
+
+class RunPeriodAttributionItem(BaseModel):
+    """按建仓来源 Run 时段归因（含 holding 持仓浮盈，run_id 为空归入 unknown）"""
+
+    period: str  # pre_market/morning/noon/tail/post_close/manual/review/unknown
+    count: int
+    win_rate: Optional[float] = None
+    avg_return: Optional[float] = None
+    total_return: Optional[float] = None
+
+
+class AttributionResult(BaseModel):
+    """归因统计结果"""
+
+    by_sell_reason: list[SellReasonAttributionItem] = Field(default_factory=list)
+    by_run_period: list[RunPeriodAttributionItem] = Field(default_factory=list)

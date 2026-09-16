@@ -17,6 +17,8 @@ from modules.admin.deps.auth.permission import require_permission
 from modules.strategy.services.position_service import PositionService
 from modules.strategy.services.strategy_service import StrategyService
 from modules.strategy.schemas.strategy import (
+    AttributionResult,
+    EquityCurvePoint,
     PositionItem,
     PositionCloseRequest,
     TrackLogItem,
@@ -26,6 +28,9 @@ from modules.strategy.schemas.strategy import (
 logger = logging.getLogger(__name__)
 
 position_router = APIRouter(prefix="/positions", tags=["AI助手/AI分析"])
+
+# 绩效深化统计（净值曲线 / 归因），独立于持仓 CRUD 子前缀
+stats_router = APIRouter(prefix="/stats", tags=["AI助手/AI分析"])
 
 
 def _page_data(records, page, page_size, total):
@@ -123,3 +128,41 @@ async def get_stats(
 ):
     items = await PositionService.get_stats(db, strategy_id)
     return response_base.success(data=items)
+
+
+# ----------------------------------------------------------------------
+# 绩效深化（净值曲线 / 归因）
+# ----------------------------------------------------------------------
+@stats_router.get(
+    "/equity-curve",
+    response_model=ResponseModel[list[EquityCurvePoint]],
+    summary="策略模拟盘净值曲线（等权平均口径，基准 100）",
+    dependencies=[Depends(require_permission("strategy:position:list"))],
+)
+async def get_equity_curve(
+    strategy_id: int = Query(..., description="策略 ID"),
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """每日净值 = 当日处于持有期的全部持仓「当日最新已知浮盈%」等权平均 + 100；
+    数据源为持仓表 + 跟踪日志（按日取最后一条、前向填充、卖出日锁定最终收益率），
+    只输出有跟踪数据的日期"""
+    items = await PositionService.get_equity_curve(db, strategy_id)
+    return response_base.success(data=items)
+
+
+@stats_router.get(
+    "/attribution",
+    response_model=ResponseModel[AttributionResult],
+    summary="策略归因统计（按卖出原因 / 按建仓来源时段）",
+    dependencies=[Depends(require_permission("strategy:position:list"))],
+)
+async def get_attribution(
+    strategy_id: int = Query(..., description="策略 ID"),
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """by_sell_reason 仅统计已平仓持仓；by_run_period 按建仓归属（position.run_id →
+    Run.run_period，存量无 run_id 归入 unknown），含 holding 持仓浮盈"""
+    result = await PositionService.get_attribution(db, strategy_id)
+    return response_base.success(data=result)

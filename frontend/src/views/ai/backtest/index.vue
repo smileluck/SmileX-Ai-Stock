@@ -1,5 +1,5 @@
 <script setup lang="tsx">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import {
   NButton,
   NCard,
@@ -12,6 +12,8 @@ import {
   NInputNumber,
   NPagination,
   NPopconfirm,
+  NRadioButton,
+  NRadioGroup,
   NSelect,
   NSpace,
   NTag,
@@ -40,6 +42,7 @@ interface RunForm {
   range: [number, number] | null;
   initial_capital: number;
   slippage_pct: number;
+  slippage_model: Api.Backtest.SlippageModel;
   commission_pct: number;
   stamp_tax_pct: number;
 }
@@ -54,9 +57,21 @@ const runForm = reactive<RunForm>({
   range: defaultRange(),
   initial_capital: 1000000,
   slippage_pct: 0.1,
+  slippage_model: 'fixed',
   commission_pct: 0.025,
   stamp_tax_pct: 0.05
 });
+
+/** 滑点上限：fixed 固定百分比 ≤10，amp 振幅系数 ≤50 */
+const slippageMax = computed(() => (runForm.slippage_model === 'amp' ? 50 : 10));
+
+// 切回 fixed 时收紧超限的滑点值
+watch(
+  () => runForm.slippage_model,
+  model => {
+    if (model === 'fixed' && runForm.slippage_pct > 10) runForm.slippage_pct = 10;
+  }
+);
 
 const strategyOptions = ref<{ value: number; label: string }[]>([]);
 const submitting = ref(false);
@@ -93,6 +108,7 @@ async function onSubmitRun() {
       end_date: dayjs(runForm.range[1]).format('YYYY-MM-DD'),
       initial_capital: runForm.initial_capital,
       slippage_pct: runForm.slippage_pct,
+      slippage_model: runForm.slippage_model,
       commission_pct: runForm.commission_pct,
       stamp_tax_pct: runForm.stamp_tax_pct
     });
@@ -345,10 +361,23 @@ onMounted(() => {
           <template #header>
             <NText depth="3" class="text-12px">{{ $t('page.aiBacktest.advanced') }}</NText>
           </template>
-          <NSpace align="center" :size="16">
-            <NFormItem :label="$t('page.aiBacktest.slippage')" label-placement="left" class="mb-0">
-              <NInputNumber v-model:value="runForm.slippage_pct" :min="0" :max="10" :step="0.05" class="w-120px" />
+          <NSpace align="center" :size="16" class="flex-wrap">
+            <NFormItem :label="$t('page.aiBacktest.slippageModel')" label-placement="left" class="mb-0">
+              <NRadioGroup v-model:value="runForm.slippage_model" size="small">
+                <NRadioButton value="fixed">{{ $t('page.aiBacktest.slippageFixed') }}</NRadioButton>
+                <NRadioButton value="amp">{{ $t('page.aiBacktest.slippageAmp') }}</NRadioButton>
+              </NRadioGroup>
             </NFormItem>
+            <NFormItem
+              :label="runForm.slippage_model === 'amp' ? $t('page.aiBacktest.slippageAmpLabel') : $t('page.aiBacktest.slippage')"
+              label-placement="left"
+              class="mb-0"
+            >
+              <NInputNumber v-model:value="runForm.slippage_pct" :min="0" :max="slippageMax" :step="0.05" class="w-120px" />
+            </NFormItem>
+            <NText v-if="runForm.slippage_model === 'amp'" depth="3" class="text-12px">
+              {{ $t('page.aiBacktest.slippageAmpTip') }}
+            </NText>
             <NFormItem :label="$t('page.aiBacktest.commission')" label-placement="left" class="mb-0">
               <NInputNumber v-model:value="runForm.commission_pct" :min="0" :max="10" :step="0.005" class="w-120px" />
             </NFormItem>
