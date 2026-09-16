@@ -16,12 +16,12 @@
 
 ## 各工具加载方式
 
-| 工具 | 加载方式 |
-|---|---|
-| Claude Code | 根 `CLAUDE.md @AGENTS.md` 原生 import；`.claude/commands/` 只放项目命令，不生成规则适配文件 |
-| Kimi Code | 原生自动加载 `AGENTS.md`；项目级工作流技能放 `.agents/skills/`，无需适配文件 |
-| Trae | `.trae/rules/project_rules.md` 薄适配层指向 `AGENTS.MD` |
-| Cursor / Codex / 其他 | 若不支持 `@import`，参照 `.trae` 模式新建薄适配文件，只写入口指针，不复制规则正文 |
+| 工具                  | 加载方式                                                                    |
+| ------------------- | ----------------------------------------------------------------------- |
+| Claude Code         | 根 `CLAUDE.md @AGENTS.md` 原生 import；`.claude/commands/` 只放项目命令，不生成规则适配文件 |
+| Kimi Code           | 原生自动加载 `AGENTS.md`；项目级工作流技能放 `.agents/skills/`，无需适配文件                   |
+| Trae                | `.trae/rules/project_rules.md` 薄适配层指向 `AGENTS.MD`                       |
+| Cursor / Codex / 其他 | 若不支持 `@import`，参照 `.trae` 模式新建薄适配文件，只写入口指针，不复制规则正文                      |
 
 任何工具的私有目录都不应保存项目级规则副本——规则正文只在 `AGENTS.MD` 与 `aiDoc/`。
 
@@ -92,9 +92,8 @@
 
 详细索引、常用入口与"任务→必读文档"路由表，统一维护在 `aiDoc/README.md`。本文件不再罗列，避免双份维护导致口径漂移。冲突时以本文件为准。
 
-
-
 <!-- smilex-memory-guide -->
+
 ## 长期记忆(SmileX Memory MCP)
 
 本项目已接入 SmileX 记忆服务,工具前缀 `mcp__smilex-memory__`:
@@ -102,4 +101,5 @@
 - **回答涉及项目事实、历史决策、个人偏好的问题前**,先调 `memory_recall(query)` 获取上下文
 - **任务完成或得到新结论后**,调 `memory_write(content, entities?, relations?)` 沉淀
 - 首次接触本项目时调 `memory_init_project(name)` 完成冷启动
-- 同一对话内保持相同 session_id(默认 "default")
+- 同一对话内保持相同 session\_id(默认 "default")
+
