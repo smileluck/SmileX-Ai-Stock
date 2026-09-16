@@ -31,6 +31,7 @@ declare module "@elegant-router/types" {
     "ai_analysis": "/ai/analysis";
     "ai_backtest": "/ai/backtest";
     "ai_chat": "/ai/chat";
+    "ai_factor": "/ai/factor";
     "ai_financial-analysis": "/ai/financial-analysis";
     "ai_macro": "/ai/macro";
     "ai_market-analysis": "/ai/market-analysis";
@@ -151,6 +152,7 @@ declare module "@elegant-router/types" {
     | "ai_analysis"
     | "ai_backtest"
     | "ai_chat"
+    | "ai_factor"
     | "ai_financial-analysis"
     | "ai_macro"
     | "ai_market-analysis"

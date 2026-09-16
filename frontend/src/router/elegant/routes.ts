@@ -144,6 +144,15 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'ai_factor',
+        path: '/ai/factor',
+        component: 'view.ai_factor',
+        meta: {
+          title: 'ai_factor',
+          i18nKey: 'route.ai_factor'
+        }
+      },
+      {
         name: 'ai_financial-analysis',
         path: '/ai/financial-analysis',
         component: 'view.ai_financial-analysis',

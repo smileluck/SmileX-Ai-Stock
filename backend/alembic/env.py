@@ -79,6 +79,7 @@ from database.models.business.backtest import (
     BusinessBacktest,
     BusinessBacktestTrade,
 )
+from database.models.business.factor import BusinessFactor
 from database.models.sys.ai_model import SysAiModel, SysAiModelBinding
 from database.models.sys.dept import SysDept
 from database.models.sys.permission import SysPermission

@@ -19,8 +19,8 @@ from modules.stock.services._common import num
 
 logger = logging.getLogger(__name__)
 
-# 日线查询字段
-_BAR_FIELDS = "date,open,high,low,close,preclose,pctChg"
+# 日线查询字段（volume/amount 供因子计算使用，回测引擎只读 OHLC/pct_chg，向后兼容）
+_BAR_FIELDS = "date,open,high,low,close,preclose,volume,amount,pctChg"
 
 # 交易日历基准指数（上证指数）
 _CALENDAR_INDEX = "sh.000001"
@@ -52,6 +52,8 @@ def _row_to_bar(fields: list[str], row: list[str]) -> dict:
         "low": num(data.get("low")),
         "close": num(data.get("close")),
         "preclose": num(data.get("preclose")),
+        "volume": num(data.get("volume")),
+        "amount": num(data.get("amount")),
         "pct_chg": num(data.get("pctChg")),
     }
 

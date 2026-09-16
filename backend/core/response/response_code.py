@@ -165,6 +165,12 @@ class CustomErrorCode(CustomCodeBase):
     BACKTEST_NOT_FOUND = (11701, "error.backtest.not_found")
     BACKTEST_RUNNING_CONFLICT = (11702, "error.backtest.running_conflict")
     BACKTEST_INVALID_PARAMS = (11703, "error.backtest.invalid_params")
+    # 因子管理 11801-11900
+    FACTOR_NOT_FOUND = (11801, "error.factor.not_found")
+    FACTOR_FORMULA_INVALID = (11802, "error.factor.formula_invalid")
+    FACTOR_IMPORT_FAILED = (11803, "error.factor.import_failed")
+    FACTOR_CODE_CONFLICT = (11804, "error.factor.code_conflict")
+    FACTOR_PRESET_DELETE_FORBIDDEN = (11805, "error.factor.preset_delete_forbidden")
 
 @dataclass
 class CustomResponse:

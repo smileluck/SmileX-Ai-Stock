@@ -29,6 +29,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   ai_analysis: () => import("@/views/ai/analysis/index.vue"),
   ai_backtest: () => import("@/views/ai/backtest/index.vue"),
   ai_chat: () => import("@/views/ai/chat/index.vue"),
+  ai_factor: () => import("@/views/ai/factor/index.vue"),
   "ai_financial-analysis": () => import("@/views/ai/financial-analysis/index.vue"),
   ai_macro: () => import("@/views/ai/macro/index.vue"),
   "ai_market-analysis": () => import("@/views/ai/market-analysis/index.vue"),

@@ -423,3 +423,24 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - `equity_curve`：`[{date, equity, cash, market_value}]`，按交易日升序，前端直接渲染（ECharts 折线）
 - `BacktestTradeItem`：`action: buy|sell`；`reason` 买入时为 AI 理由原文、卖出时为枚举 `stop_loss/target_reached/trailing_stop/ai_signal/backtest_end`；`return_rate` 仅 sell 有值（%）；金额/价格/比例均为 `number`（Numeric → float），百分比不带 `%`
 - 前端 API：`frontend/src/service/api/backtest.ts`，类型 `Api.Backtest.*`（`frontend/src/typings/api/backtest.d.ts`）；页面 `views/ai/backtest/`（发起表单 + 记录列表 running 时 10s 轮询 + 详情抽屉绩效卡/净值曲线/明细分页）
+
+---
+
+## 因子管理模块契约（2026-09-16，迁移 0034）
+
+- 前缀 `/admin/factor`；权限码复用 `strategy:manage`；错误码新段 11801-11805（11801 不存在 / 11802 公式非法 / 11803 导入失败 / 11804 code 冲突 / 11805 预置不可删）
+- 接口（固定路径均声明在 `/{factor_id}` 之前）：
+  - `GET /list?category&source&keyword&page&page_size`：统一分页结构，created_at 倒序；keyword 匹配 name/code
+  - `POST /`（实际路径 `/admin/factor/`，FastAPI 不允许空前缀+空路径，请求 `/admin/factor` 会 307 重定向）：手工创建，source 固定 custom，code 全局唯一（11804），公式先过白名单校验（11802）
+  - `PUT /{factor_id}`：按传入字段更新，code/source 不可改；预置因子可经 `status=false` 停用
+  - `DELETE /{factor_id}`：软删；source=preset 拒绝（11805），只能停用
+  - `GET /{factor_id}`：详情
+  - `POST /import`：body `{url?|content?}` 二选一（400）；JSON 约定 `[{name, code, category?, formula, description?, source_url?}]`（数组或单对象），url 方式 GET 15s 超时；逐条校验公式+code 唯一（含批内重复），非法/冲突跳过 → 返回 `{imported, skipped, errors[]}`；整体获取/解析失败 11803
+  - `POST /calc`：body `{factor_id, codes[1..500], end_date?=今天, lookback?=120(5..750)}` → `{factor_id, factor_code, end_date(实际目标交易日), values:[{code, value}], warnings[]}`；历史不足/结果 NaN 的股票跳过进 warnings；北交所等不支持代码跳过
+  - `POST /screen`：body `{codes?|strategy_id?(用其股票池), conditions[1..10], end_date?, lookback?=120}`，**不支持全市场选股**（两者必须且只能给一个，400）；条件 AND，`op: gt|gte|lt|lte|top_n`（top_n=按因子值降序前 N，value 须正整数）→ `{total, end_date, matched:[{code, name, factor_values:{因子code: value|null}}], warnings[]}`；name 为 best-effort（该代码最近一条 AI 信号的 stock_name，无则空串）
+  - `POST /screen/save-pool`：body `{strategy_id, codes[]}` 覆盖 `strategy.stock_pool={"codes":[...]}`（去重去空白，≤500）；策略不存在 11501 → `{strategy_id, total}`
+- `FactorItem.status` 为 **bool**，前端按 `"1"/"2"` 字符串桥接；`source: preset|imported|custom`；`category` 自由字符串（price/momentum/volume/volatility/custom/imported）
+- 公式 DSL（`modules/factor/services/formula.py`，ast 白名单严禁 eval/exec）：字段 `open/high/low/close/volume/amount/preclose/pct_chg/vwap`；TS 函数 `REF/MA/SUM/MAX/MIN/STD(ddof=1)/DELTA/COUNT`(2参） `CORR`(3参），窗口须正整数常量；标量 `ABS/LOG/SQRT/SIGN/IF`；截面 `RANK`（仅顶层或算术/比较内，universe 内归一化 pos/total ∈(0,1]，值大→近1，NaN 不参与）；禁止属性/下标/链式比较/BoolOp/IfExp/关键字参数
+- 预置因子 17 条（迁移种子，固定 ID 段 2942406616009201-217，按 code 幂等）：bias5/10/20、roc5/10/20、vr1、vr5、vol20、amp20、rsi14、alpha101_006/012/101（source_url=arxiv 1601.00991）、vol_price_corr20、vwap_dev、high20_dev
+- 行情复用 backtest 模块 `fetch_market_data`（baostock 不复权日线，`_BAR_FIELDS` 已扩 volume/amount）；目标日=≤end_date 的最后一个交易日，每股截取末 lookback 条
+- 前端（未做）：页面与 API 待前端任务补充

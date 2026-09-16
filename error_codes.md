@@ -80,6 +80,15 @@
 | 11702 | 该策略有正在运行的回测 | BACKTEST_RUNNING_CONFLICT |
 | 11703 | 回测参数非法 | BACKTEST_INVALID_PARAMS |
 
+### 9. 因子管理 (11801-11900)
+| 错误码 | 错误信息 | 常量名 |
+|-------|---------|--------|
+| 11801 | 因子不存在 | FACTOR_NOT_FOUND |
+| 11802 | 因子公式非法 | FACTOR_FORMULA_INVALID |
+| 11803 | 因子导入失败 | FACTOR_IMPORT_FAILED |
+| 11804 | 因子代码已存在 | FACTOR_CODE_CONFLICT |
+| 11805 | 预置因子不可删除，只能停用 | FACTOR_PRESET_DELETE_FORBIDDEN |
+
 ## 二、标准响应状态码
 
 ### 1. HTTP 状态码
@@ -191,6 +200,7 @@
 - **10501-10600**：机器人任务错误
 - **10901-11000**：限流与安全错误
 - **11701-11800**：策略回测错误
+- **11801-11900**：因子管理错误
 
 ### 前端错误处理
 前端在 `frontend/src/service/request/index.ts` 中处理后端错误码，主要关注：

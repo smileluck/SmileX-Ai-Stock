@@ -454,3 +454,10 @@ backtest:
   not_found: "Backtest record not found"
   running_conflict: "A backtest for this strategy is already running"
   invalid_params: "Invalid backtest parameters"
+
+factor:
+  not_found: "Factor not found"
+  formula_invalid: "Invalid factor formula"
+  import_failed: "Factor import failed"
+  code_conflict: "Factor code already exists"
+  preset_delete_forbidden: "Preset factors cannot be deleted, only disabled"

@@ -461,3 +461,10 @@ backtest:
   not_found: "回测记录不存在"
   running_conflict: "该策略有正在运行的回测"
   invalid_params: "回测参数非法"
+
+factor:
+  not_found: "因子不存在"
+  formula_invalid: "因子公式非法"
+  import_failed: "因子导入失败"
+  code_conflict: "因子代码已存在"
+  preset_delete_forbidden: "预置因子不可删除，只能停用"
