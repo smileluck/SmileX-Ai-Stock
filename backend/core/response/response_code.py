@@ -144,6 +144,7 @@ class CustomErrorCode(CustomCodeBase):
     POSITION_NOT_FOUND = (11506, "error.strategy.position_not_found")
     POSITION_ALREADY_CLOSED = (11507, "error.strategy.position_already_closed")
     STRATEGY_ALREADY_RUNNING = (11508, "error.strategy.already_running")
+    STRATEGY_IMPORT_INVALID = (11509, "error.strategy.import_invalid")
     # 大盘/板块 AI 分析 11601-11700
     ANALYSIS_TYPE_INVALID = (11601, "error.analysis.type_invalid")
     ANALYSIS_RUN_NOT_FOUND = (11602, "error.analysis.run_not_found")

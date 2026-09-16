@@ -18,9 +18,13 @@ from modules.strategy.services.strategy_executor import StrategyExecutor
 from modules.strategy.services.position_service import PositionService
 from modules.strategy.schemas.strategy import (
     StrategyCreateRequest,
+    StrategyExportData,
+    StrategyImportRequest,
     StrategyItem,
     StrategyRunSubmitResult,
     StrategyRunItem,
+    TemplateItem,
+    TemplatePublishRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,6 +105,115 @@ async def delete_strategy(
 ):
     await StrategyService.delete(db, strategy_id)
     return response_base.success(msg="删除成功")
+
+
+# ----------------------------------------------------------------------
+# 策略模板市场（固定路径须声明在 /{strategy_id} 之前）
+# ----------------------------------------------------------------------
+@strategy_router.get(
+    "/templates",
+    response_model=ResponseModel[ResponsePageDataModel[TemplateItem]],
+    summary="模板市场列表（已发布模板 + 系统预置策略，附克隆次数与最近回测摘要）",
+    dependencies=[Depends(require_permission("strategy:manage"))],
+)
+async def get_template_list(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """模板市场：is_template=True 或 is_preset=True 的策略，按创建时间倒序；
+    每条附带 tags/source_id、克隆次数（存活克隆件计数）、最近一次 success 回测的
+    绩效摘要（total_return_pct/max_drawdown_pct/win_rate/trade_count 与回测区间，无则 null）"""
+    items, total = await StrategyService.list_templates(db, page, page_size)
+    return response_base.success(data=_page_data(items, page, page_size, total))
+
+
+@strategy_router.post(
+    "/import",
+    response_model=ResponseModel[StrategyItem],
+    summary="导入策略（可移植 JSON，schema_version 仅接受 1，新建为停用状态）",
+    dependencies=[Depends(require_permission("strategy:manage"))],
+)
+async def import_strategy(
+    req: StrategyImportRequest,
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """导入策略 JSON（来自导出接口）：逐项校验分类/时段/股票池结构/百分比范围，
+    schema_version 非法或字段校验失败返回 11509；name 冲突自动追加序号；
+    新策略 is_preset/is_template=False、status 停用"""
+    item = await StrategyService.import_strategy(db, req)
+    return response_base.success(data=item, msg="导入成功（默认停用，请确认配置后手动启用）")
+
+
+@strategy_router.post(
+    "/{strategy_id}/clone",
+    response_model=ResponseModel[StrategyItem],
+    summary="克隆策略（默认停用，名称追加「（副本）」，重名追加序号）",
+    dependencies=[Depends(require_permission("strategy:manage"))],
+)
+async def clone_strategy(
+    strategy_id: int,
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """克隆策略：prompt/股票池/时段/风控参数/tags 原样复制，is_preset/is_template 重置为 False，
+    source_id 指向原策略；克隆件默认停用（实盘引擎只跑启用策略），待确认后手动启用"""
+    item = await StrategyService.clone(db, strategy_id)
+    return response_base.success(data=item, msg="克隆成功（默认停用，请确认配置后手动启用）")
+
+
+@strategy_router.post(
+    "/{strategy_id}/publish",
+    response_model=ResponseModel[StrategyItem],
+    summary="发布为模板（可选覆盖 tags）",
+    dependencies=[Depends(require_permission("strategy:manage"))],
+)
+async def publish_strategy(
+    strategy_id: int,
+    req: TemplatePublishRequest | None = None,
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """发布策略为模板（is_template=True，is_preset 策略也允许发布）；body 传 tags 时覆盖更新标签"""
+    item = await StrategyService.set_template(db, strategy_id, True, req.tags if req else None)
+    return response_base.success(data=item, msg="已发布为模板")
+
+
+@strategy_router.post(
+    "/{strategy_id}/unpublish",
+    response_model=ResponseModel[StrategyItem],
+    summary="下架模板（可选覆盖 tags）",
+    dependencies=[Depends(require_permission("strategy:manage"))],
+)
+async def unpublish_strategy(
+    strategy_id: int,
+    req: TemplatePublishRequest | None = None,
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """下架模板（is_template=False）；body 传 tags 时覆盖更新标签"""
+    item = await StrategyService.set_template(db, strategy_id, False, req.tags if req else None)
+    return response_base.success(data=item, msg="已下架模板")
+
+
+@strategy_router.get(
+    "/{strategy_id}/export",
+    response_model=ResponseModel[StrategyExportData],
+    summary="导出策略为可移植 JSON（schema_version=1，不含 id/状态/时间戳）",
+    dependencies=[Depends(require_permission("strategy:manage"))],
+)
+async def export_strategy(
+    strategy_id: int,
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """导出策略配置：{schema_version, name, description, category, prompt_template,
+    stock_pool, execute_periods, max_positions, stop_loss_pct, take_profit_pct,
+    trailing_drawdown_pct, tags}，可经导入接口跨环境迁移"""
+    data = await StrategyService.export_strategy(db, strategy_id)
+    return response_base.success(data=data)
 
 
 # ----------------------------------------------------------------------

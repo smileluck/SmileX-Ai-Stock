@@ -450,6 +450,17 @@ research:
   stock_code_invalid: "Invalid stock code"
   sync_failed: "Failed to sync research reports"
 
+strategy:
+  not_found: "Strategy not found"
+  name_exist: "Strategy name already exists"
+  disabled: "Strategy is disabled"
+  execute_failed: "Strategy execution failed"
+  signal_parse_failed: "Failed to parse signals"
+  position_not_found: "Position not found"
+  position_already_closed: "Position already closed"
+  already_running: "This strategy is already running"
+  import_invalid: "Invalid strategy import data"
+
 backtest:
   not_found: "Backtest record not found"
   running_conflict: "A backtest for this strategy is already running"

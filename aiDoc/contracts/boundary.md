@@ -443,4 +443,21 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 公式 DSL（`modules/factor/services/formula.py`，ast 白名单严禁 eval/exec）：字段 `open/high/low/close/volume/amount/preclose/pct_chg/vwap`；TS 函数 `REF/MA/SUM/MAX/MIN/STD(ddof=1)/DELTA/COUNT`(2参） `CORR`(3参），窗口须正整数常量；标量 `ABS/LOG/SQRT/SIGN/IF`；截面 `RANK`（仅顶层或算术/比较内，universe 内归一化 pos/total ∈(0,1]，值大→近1，NaN 不参与）；禁止属性/下标/链式比较/BoolOp/IfExp/关键字参数
 - 预置因子 17 条（迁移种子，固定 ID 段 2942406616009201-217，按 code 幂等）：bias5/10/20、roc5/10/20、vr1、vr5、vol20、amp20、rsi14、alpha101_006/012/101（source_url=arxiv 1601.00991）、vol_price_corr20、vwap_dev、high20_dev
 - 行情复用 backtest 模块 `fetch_market_data`（baostock 不复权日线，`_BAR_FIELDS` 已扩 volume/amount）；目标日=≤end_date 的最后一个交易日，每股截取末 lookback 条
-- 前端（未做）：页面与 API 待前端任务补充
+- 前端：`views/ai/factor/`（路由 `ai_factor` /ai/factor，菜单需后台手工新增）三 Tab——因子库（分类/来源/关键字筛选 + 状态开关 + 新建/编辑抽屉（编辑时 code 禁用）+ 导入弹窗（URL/粘贴 JSON 二选一，展示 imported/skipped/errors 明细）；创建走 `/admin/factor/` 尾斜杠）、因子试算（因子+代码/策略带入+目标日+lookback → /calc 结果表 4 位小数 + warnings NAlert）、选股器（手动 codes/策略池二选一 + 动态条件行 AND（>/≥/</≤/前N名）→ /screen 动态因子列结果表 + 存为策略股票池弹窗）；api `service/api/factor.ts` + typings `Api.Factor`；i18n `page.aiFactor.*`
+
+---
+
+## 策略模板市场契约（2026-09-16，迁移 0035）
+
+- 接口挂在 strategy 模块既有子前缀下：`/admin/strategy/strategies/*`；权限复用 `strategy:manage`；新错误码 11509 STRATEGY_IMPORT_INVALID（strategy 段 11501-11509 已补入 i18n 双 yaml 与 error_codes.md）
+- `business_ai_strategy` 新增列：`is_template`（Boolean 默认 False，索引）、`source_id`（BigInteger 可空，索引，克隆/导入来源）、`tags`（JSON 可空，字符串列表）
+- 接口：
+  - `POST /strategies/{id}/clone` → `StrategyItem`：配置/prompt/股票池/时段/风控/tags 原样复制；name=原名（副本）（重名追加（副本2）…）；`is_preset/is_template=False`、`source_id`=原 id、**status=False（克隆件默认停用，实盘引擎只跑启用策略，须手动启用）**
+  - `POST /strategies/{id}/publish` / `POST /strategies/{id}/unpublish`：body 可选 `{tags?: string[]}`（传入即覆盖，空数组清空）；翻转 is_template；is_preset 策略允许发布
+  - `GET /strategies/templates?page&page_size` → 统一分页 `TemplateItem[]`：`is_template OR is_preset`，created_at 倒序
+  - `GET /strategies/{id}/export` → `StrategyExportData`
+  - `POST /strategies/import`：body=导出 JSON + `schema_version`（**仅接受 1**，否则 11509）；分类/时段/股票池结构 `{codes: string[]}` 逐项校验（11509），百分比越界走 pydantic 400（同创建接口）；name 冲突自动追加（2）（3）…；新件 is_preset/is_template=False、status=False
+- `StrategyItem` 新增字段：`is_template: bool`、`source_id: number|null`、`tags: string[]|null`（`status` 仍为 bool 直传）
+- `TemplateItem = StrategyItem + clone_count`（存活克隆件计数，软删不计）`+ last_backtest: {start_date, end_date, total_return_pct, max_drawdown_pct, win_rate, trade_count} | null`（该 strategy_id 最新一条 status=success 回测的 result 摘要，无则 null）
+- 导出 JSON（schema_version=1）：`{schema_version, name, description, category, prompt_template, stock_pool, execute_periods, max_positions, stop_loss_pct, take_profit_pct, trailing_drawdown_pct, tags}`——不含 id/状态/时间戳；导入策略 `source_id` 恒为 None（跨环境迁移原 id 无意义）
+- 前端：`views/ai/analysis/` 策略管理 Tab 操作列加 克隆(Popconfirm)/导出(Blob 下载 `<名>.strategy.json`)/发布(NDynamicTags 弹窗)/取消发布，名称列加「模板」tag；第四 Tab「策略模板」= `modules/strategy-template.vue`（模板表格：tags/克隆次数/last_backtest 绩效红涨绿跌 + 克隆此模板 + 导入弹窗）；i18n 键在 `page.aiStrategy.*`（与既有三 Tab 同域，非 aiAnalysis）

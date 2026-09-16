@@ -71,6 +71,9 @@ class StrategyItem(BaseModel):
     description: Optional[str] = None
     category: str = "general"
     is_preset: bool = False
+    is_template: bool = False
+    source_id: Optional[int] = None
+    tags: Optional[list[str]] = None
     prompt_template: Optional[str] = None
     stock_pool: Optional[dict] = None
     execute_periods: Optional[list] = None
@@ -82,6 +85,76 @@ class StrategyItem(BaseModel):
     last_executed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+# ----------------------------------------------------------------------
+# 策略模板市场（克隆 / 发布 / 导出 / 导入）
+# ----------------------------------------------------------------------
+
+# 导出 JSON 的 schema 版本（仅接受 1，便于将来兼容演进）
+STRATEGY_EXPORT_SCHEMA_VERSION = 1
+
+
+class TemplatePublishRequest(BaseModel):
+    """发布/下架模板请求（body 可选，tags 传入时覆盖更新）"""
+
+    tags: Optional[list[str]] = Field(None, max_length=10, description="模板标签，如 [\"打板\", \"短线\"]")
+
+
+class TemplateBacktestSummary(BaseModel):
+    """最近一次 success 回测的绩效摘要（无则整体为 null）"""
+
+    start_date: str
+    end_date: str
+    total_return_pct: Optional[float] = None
+    max_drawdown_pct: Optional[float] = None
+    win_rate: Optional[float] = None
+    trade_count: Optional[int] = None
+
+
+class TemplateItem(StrategyItem):
+    """模板市场列表项：策略详情 + 克隆次数 + 最近回测摘要"""
+
+    clone_count: int = 0
+    last_backtest: Optional[TemplateBacktestSummary] = None
+
+
+class StrategyExportData(BaseModel):
+    """策略可移植导出 JSON（不含 id/状态/时间戳）"""
+
+    schema_version: int = STRATEGY_EXPORT_SCHEMA_VERSION
+    name: str
+    description: Optional[str] = None
+    category: str = "general"
+    prompt_template: Optional[str] = None
+    stock_pool: Optional[dict] = None
+    execute_periods: Optional[list[str]] = None
+    max_positions: int = 10
+    stop_loss_pct: Optional[float] = None
+    take_profit_pct: Optional[float] = None
+    trailing_drawdown_pct: Optional[float] = None
+    tags: Optional[list[str]] = None
+
+
+class StrategyImportRequest(BaseModel):
+    """导入策略请求（字段口径同创建接口；schema_version 仅接受 1）"""
+
+    schema_version: int = Field(..., description="导出 JSON 的 schema 版本，当前仅支持 1")
+    name: str = Field(..., min_length=1, max_length=100, description="策略名称（冲突时自动追加序号）")
+    description: Optional[str] = Field(None, max_length=500, description="策略描述")
+    category: str = Field("general", max_length=30, description="策略分类")
+    prompt_template: Optional[str] = Field(None, description="策略定制提示词")
+    stock_pool: Optional[dict] = Field(None, description="股票池 {codes: [...]}")
+    execute_periods: list[str] = Field(
+        default_factory=lambda: ["morning"], description="执行时段列表"
+    )
+    max_positions: int = Field(10, ge=1, le=100, description="最大同时持仓数")
+    stop_loss_pct: Optional[float] = Field(5.0, ge=0, le=100, description="默认止损比例(%)")
+    take_profit_pct: Optional[float] = Field(10.0, ge=0, le=500, description="默认止盈比例(%)")
+    trailing_drawdown_pct: Optional[float] = Field(
+        5.0, ge=0, le=100, description="回撤止盈比例(%)，0或不填不启用"
+    )
+    tags: Optional[list[str]] = Field(None, max_length=10, description="策略标签")
 
 
 class StrategyRunItem(BaseModel):

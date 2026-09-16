@@ -116,3 +116,55 @@ export function fetchGetStrategyStats(strategyId?: number) {
     params: { strategy_id: strategyId || undefined }
   });
 }
+
+/** clone a strategy (copy is disabled by default, name gets a （副本） suffix) */
+export function fetchCloneStrategy(strategyId: number) {
+  return request<Api.Strategy.StrategyItem>({
+    url: `/admin/strategy/strategies/${strategyId}/clone`,
+    method: 'post'
+  });
+}
+
+/** publish a strategy as a template (tags overwrite when provided) */
+export function fetchPublishStrategy(strategyId: number, data?: Api.Strategy.TemplatePublishParams) {
+  return request<Api.Strategy.StrategyItem>({
+    url: `/admin/strategy/strategies/${strategyId}/publish`,
+    method: 'post',
+    data
+  });
+}
+
+/** unpublish a template */
+export function fetchUnpublishStrategy(strategyId: number, data?: Api.Strategy.TemplatePublishParams) {
+  return request<Api.Strategy.StrategyItem>({
+    url: `/admin/strategy/strategies/${strategyId}/unpublish`,
+    method: 'post',
+    data
+  });
+}
+
+/** get template market list (published templates + preset strategies, paginated) */
+export function fetchGetStrategyTemplates(params: { page: number; page_size: number }) {
+  return request<Api.Common.PaginatingQueryRecord<Api.Strategy.TemplateItem>>({
+    url: '/admin/strategy/strategies/templates',
+    method: 'get',
+    params
+  });
+}
+
+/** export a strategy as portable JSON (schema_version=1) */
+export function fetchExportStrategy(strategyId: number) {
+  return request<Api.Strategy.StrategyExportData>({
+    url: `/admin/strategy/strategies/${strategyId}/export`,
+    method: 'get'
+  });
+}
+
+/** import a strategy from portable JSON (new strategy is disabled by default) */
+export function fetchImportStrategy(data: Api.Strategy.StrategyImportParams) {
+  return request<Api.Strategy.StrategyItem>({
+    url: '/admin/strategy/strategies/import',
+    method: 'post',
+    data
+  });
+}

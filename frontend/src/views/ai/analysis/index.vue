@@ -7,7 +7,9 @@ import {
   NDatePicker,
   NDrawer,
   NDrawerContent,
+  NDynamicTags,
   NInput,
+  NModal,
   NPagination,
   NPopconfirm,
   NSelect,
@@ -22,26 +24,31 @@ import type { DataTableColumns, DataTableSortState } from 'naive-ui';
 import dayjs from 'dayjs';
 import {
   fetchCloseStrategyPosition,
+  fetchCloneStrategy,
   fetchCreateStrategy,
   fetchDeleteStrategy,
+  fetchExportStrategy,
   fetchGetStrategyList,
   fetchGetStrategyPositions,
   fetchGetStrategyRuns,
   fetchGetStrategyStats,
+  fetchPublishStrategy,
   fetchRunStrategy,
   fetchTrackStrategyPositions,
+  fetchUnpublishStrategy,
   fetchUpdateStrategy
 } from '@/service/api';
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { useAppStore } from '@/store/modules/app';
 import { $t } from '@/locales';
 import StrategyOperateDrawer from './modules/strategy-operate-drawer.vue';
+import StrategyTemplate from './modules/strategy-template.vue';
 
 defineOptions({ name: 'AiAnalysis' });
 
 const appStore = useAppStore();
 
-const activeTab = ref<'strategies' | 'positions' | 'stats'>('strategies');
+const activeTab = ref<'strategies' | 'positions' | 'stats' | 'templates'>('strategies');
 
 // ================================================================
 // 策略管理
@@ -146,6 +153,66 @@ async function onRunStrategy(row: Api.Strategy.StrategyItem) {
   }
 }
 
+// ------------------------------------------------------------------
+// 克隆 / 导出 / 发布模板
+// ------------------------------------------------------------------
+async function onCloneStrategy(row: Api.Strategy.StrategyItem) {
+  const { error } = await fetchCloneStrategy(row.id);
+  if (!error) {
+    // 克隆件默认停用（实盘引擎只跑启用策略），提示用户确认后手动启用
+    window.$message?.success($t('page.aiStrategy.cloneSuccess'));
+    await loadStrategies();
+  }
+}
+
+/** 导出策略 JSON 并下载为 <策略名>.strategy.json */
+async function onExportStrategy(row: Api.Strategy.StrategyItem) {
+  const { data, error } = await fetchExportStrategy(row.id);
+  if (error || !data) return;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${row.name}.strategy.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  window.$message?.success($t('page.aiStrategy.exportSuccess'));
+}
+
+const publishVisible = ref(false);
+const publishingStrategy = ref<Api.Strategy.StrategyItem | null>(null);
+const publishTags = ref<string[]>([]);
+const publishing = ref(false);
+
+function openPublish(row: Api.Strategy.StrategyItem) {
+  publishingStrategy.value = row;
+  publishTags.value = row.tags ? [...row.tags] : [];
+  publishVisible.value = true;
+}
+
+async function onPublishSubmit() {
+  if (!publishingStrategy.value) return;
+  publishing.value = true;
+  try {
+    const { error } = await fetchPublishStrategy(publishingStrategy.value.id, { tags: publishTags.value });
+    if (!error) {
+      window.$message?.success($t('page.aiStrategy.publishSuccess'));
+      publishVisible.value = false;
+      await loadStrategies();
+    }
+  } finally {
+    publishing.value = false;
+  }
+}
+
+async function onUnpublish(row: Api.Strategy.StrategyItem) {
+  const { error } = await fetchUnpublishStrategy(row.id);
+  if (!error) {
+    window.$message?.success($t('page.aiStrategy.unpublishSuccess'));
+    await loadStrategies();
+  }
+}
+
 const PERIOD_LABEL: Record<string, string> = {
   pre_market: $t('page.aiStrategy.periodPreMarket'),
   morning: $t('page.aiStrategy.periodMorning'),
@@ -179,6 +246,11 @@ const strategyColumns = computed<DataTableColumns<Api.Strategy.StrategyItem>>(()
         {row.is_preset ? (
           <NTag size="tiny" bordered={false} type="primary">
             {$t('page.aiStrategy.presetTag')}
+          </NTag>
+        ) : null}
+        {row.is_template ? (
+          <NTag size="tiny" bordered={false} type="warning">
+            {$t('page.aiStrategy.templateTag')}
           </NTag>
         ) : null}
       </div>
@@ -251,7 +323,7 @@ const strategyColumns = computed<DataTableColumns<Api.Strategy.StrategyItem>>(()
   {
     key: 'actions',
     title: $t('common.action'),
-    width: 260,
+    width: 380,
     align: 'center',
     render: row => (
       <NSpace size={4} justify="center">
@@ -270,6 +342,28 @@ const strategyColumns = computed<DataTableColumns<Api.Strategy.StrategyItem>>(()
         <NButton size="tiny" tertiary onClick={() => openEdit(row)}>
           {$t('common.edit')}
         </NButton>
+        <NPopconfirm onPositiveClick={() => onCloneStrategy(row)}>
+          {{
+            trigger: () => (
+              <NButton size="tiny" tertiary>
+                {$t('page.aiStrategy.clone')}
+              </NButton>
+            ),
+            default: () => $t('page.aiStrategy.cloneConfirm')
+          }}
+        </NPopconfirm>
+        <NButton size="tiny" tertiary onClick={() => onExportStrategy(row)}>
+          {$t('page.aiStrategy.export')}
+        </NButton>
+        {row.is_template ? (
+          <NButton size="tiny" type="warning" ghost onClick={() => onUnpublish(row)}>
+            {$t('page.aiStrategy.unpublish')}
+          </NButton>
+        ) : (
+          <NButton size="tiny" type="warning" tertiary onClick={() => openPublish(row)}>
+            {$t('page.aiStrategy.publish')}
+          </NButton>
+        )}
         <NPopconfirm onPositiveClick={() => onDeleteStrategy(row)}>
           {{
             trigger: () => (
@@ -755,6 +849,7 @@ onMounted(() => {
           <NTabPane name="strategies" :tab="$t('page.aiStrategy.tabStrategies')" />
           <NTabPane name="positions" :tab="$t('page.aiStrategy.tabPositions')" />
           <NTabPane name="stats" :tab="$t('page.aiStrategy.tabStats')" />
+          <NTabPane name="templates" :tab="$t('page.aiStrategy.tabTemplates')" />
         </NTabs>
       </template>
 
@@ -862,7 +957,7 @@ onMounted(() => {
           :data="strategyList"
           size="small"
           :loading="strategyLoading"
-          :scroll-x="1200"
+          :scroll-x="1350"
           :row-key="(row: Api.Strategy.StrategyItem) => row.id"
         />
         <div class="mt-12px flex justify-end">
@@ -906,8 +1001,13 @@ onMounted(() => {
         </div>
       </template>
 
+      <!-- ============ 策略模板 ============ -->
+      <template v-else-if="activeTab === 'templates'">
+        <StrategyTemplate @changed="loadStrategies(true)" />
+      </template>
+
       <!-- ============ 回报率统计 ============ -->
-      <template v-else>
+      <template v-else-if="activeTab === 'stats'">
         <NSpace :size="24" class="mb-16px">
           <NStatistic :label="$t('page.aiStrategy.totalReturn')" tabular-nums>
             <span :style="{ color: pnlColor(totalReturn), fontWeight: '600' }">
@@ -934,6 +1034,28 @@ onMounted(() => {
 
     <!-- 策略配置抽屉 -->
     <StrategyOperateDrawer v-model:visible="drawerVisible" :editing="editingStrategy" @submitted="onDrawerSubmitted" />
+
+    <!-- 发布为模板弹窗（可覆盖标签） -->
+    <NModal
+      v-model:show="publishVisible"
+      preset="card"
+      :title="$t('page.aiStrategy.publishTitle', { name: publishingStrategy?.name ?? '' })"
+      class="w-480px"
+    >
+      <NSpace vertical :size="12">
+        <NText depth="2">{{ $t('page.aiStrategy.publishTags') }}</NText>
+        <NDynamicTags v-model:value="publishTags" :max="10" />
+        <NText depth="3" class="text-12px">{{ $t('page.aiStrategy.publishTip') }}</NText>
+      </NSpace>
+      <template #footer>
+        <NSpace justify="end" :size="12">
+          <NButton @click="publishVisible = false">{{ $t('common.cancel') }}</NButton>
+          <NButton type="primary" :loading="publishing" @click="onPublishSubmit">
+            {{ $t('page.aiStrategy.publish') }}
+          </NButton>
+        </NSpace>
+      </template>
+    </NModal>
 
     <!-- 执行记录抽屉 -->
     <NDrawer v-model:show="runDrawerVisible" :width="640">

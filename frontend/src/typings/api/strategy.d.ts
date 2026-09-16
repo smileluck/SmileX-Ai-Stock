@@ -16,6 +16,10 @@ declare namespace Api {
       description: string | null;
       category: StrategyCategory | string;
       is_preset: boolean;
+      is_template: boolean;
+      /** 克隆/导入来源策略 ID */
+      source_id: number | null;
+      tags: string[] | null;
       prompt_template: string | null;
       stock_pool: { codes?: string[] } | null;
       execute_periods: ExecutePeriod[] | null;
@@ -27,6 +31,48 @@ declare namespace Api {
       last_executed_at: string | null;
       created_at: string | null;
       updated_at: string | null;
+    }
+
+    /** 最近一次 success 回测的绩效摘要（模板市场列表附带，无则 null） */
+    export interface TemplateBacktestSummary {
+      start_date: string;
+      end_date: string;
+      total_return_pct: number | null;
+      max_drawdown_pct: number | null;
+      win_rate: number | null;
+      trade_count: number | null;
+    }
+
+    /** 模板市场列表项 */
+    export interface TemplateItem extends StrategyItem {
+      clone_count: number;
+      last_backtest: TemplateBacktestSummary | null;
+    }
+
+    /** 发布/下架模板参数（tags 传入时覆盖更新） */
+    export interface TemplatePublishParams {
+      tags?: string[];
+    }
+
+    /** 策略导出 JSON（schema_version 固定 1，不含 id/状态/时间戳） */
+    export interface StrategyExportData {
+      schema_version: number;
+      name: string;
+      description: string | null;
+      category: StrategyCategory | string;
+      prompt_template: string | null;
+      stock_pool: { codes?: string[] } | null;
+      execute_periods: ExecutePeriod[] | null;
+      max_positions: number;
+      stop_loss_pct: number | null;
+      take_profit_pct: number | null;
+      trailing_drawdown_pct: number | null;
+      tags: string[] | null;
+    }
+
+    /** 策略导入参数（导出 JSON + schema_version；新件默认停用） */
+    export interface StrategyImportParams extends Omit<StrategyExportData, 'schema_version'> {
+      schema_version: number;
     }
 
     /** 策略创建/更新参数 */

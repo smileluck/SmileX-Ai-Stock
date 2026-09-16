@@ -26,6 +26,8 @@ class BusinessAiStrategy(Base):
 
     __table_args__ = (
         Index("ix_ai_strategy_status", "status"),
+        Index("ix_ai_strategy_is_template", "is_template"),
+        Index("ix_ai_strategy_source_id", "source_id"),
         {"comment": "AI 分析策略配置表"},
     )
 
@@ -69,6 +71,15 @@ class BusinessAiStrategy(Base):
     )
     last_executed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None, comment="最近执行时间"
+    )
+    is_template: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, comment="是否已发布为模板（模板市场可见）"
+    )
+    source_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True, default=None, comment="克隆/导入来源策略 ID"
+    )
+    tags: Mapped[Optional[list]] = mapped_column(
+        JSON, nullable=True, default=None, comment="标签列表，如 [\"打板\", \"短线\"]"
     )
 
 

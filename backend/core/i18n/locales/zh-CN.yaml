@@ -457,6 +457,17 @@ research:
   stock_code_invalid: "股票代码非法"
   sync_failed: "研报同步失败"
 
+strategy:
+  not_found: "策略不存在"
+  name_exist: "策略名称已存在"
+  disabled: "策略已停用"
+  execute_failed: "策略执行失败"
+  signal_parse_failed: "信号解析失败"
+  position_not_found: "持仓不存在"
+  position_already_closed: "持仓已平仓"
+  already_running: "该策略正在执行中"
+  import_invalid: "策略导入数据非法"
+
 backtest:
   not_found: "回测记录不存在"
   running_conflict: "该策略有正在运行的回测"
