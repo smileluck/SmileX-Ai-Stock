@@ -11,6 +11,15 @@ export function fetchRunBacktest(data: Api.Backtest.BacktestRunParams) {
   });
 }
 
+/** run parameter sweep (sync, ≤27 combinations, not persisted) */
+export function fetchRunBacktestSweep(data: Api.Backtest.BacktestSweepParams) {
+  return request<Api.Backtest.BacktestSweepResult>({
+    url: '/admin/backtest/sweep',
+    method: 'post',
+    data
+  });
+}
+
 /** get backtest list (paginated, created_at desc) */
 export function fetchGetBacktestList(params: {
   strategy_id?: number;

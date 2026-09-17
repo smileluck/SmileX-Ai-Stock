@@ -485,3 +485,16 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 回测滑点模型：`POST /admin/backtest/run` body 加 `slippage_model: fixed|amp`（默认 fixed）；fixed=slippage_pct 直接为滑点%（上限 10）；amp=振幅比例，**实际滑点=当日振幅(high-low)/preclose×slippage_pct/100**（缺 preclose/高低价回退 fixed 口径），slippage_pct 作系数上限 50；越界均报 11703（无新错误码）；`BacktestItem` 带 `slippage_model`
 - 回测僵死恢复：TradeEngine `execute_tick` 维护段新增——`status=running` 且 `coalesce(started_at, created_at) < now-20min`（`BACKTEST_STALE_MINUTES=20`）的回测置 `failed`，error_msg=「执行超时（超过 20 分钟未完成，疑似进程重启）」，计数 `expired_stale_backtests`；与存量 run/信号超时清理同段同 commit
 - 前端：回报率统计 Tab 加「复利收益率」列（IconTooltip 说明两口径差异）+ 策略选择器联动净值曲线图与归因双卡（按卖出原因/按执行时段，红涨绿跌，unknown=历史未知）；回测发起表单高级参数加滑点模型单选（amp 时 label/上限/提示切换）；详情抽屉头部加滑点模型 tag；**`equity-chart.vue` 从 `views/ai/backtest/modules/` 提升为公共组件 `src/components/common/equity-chart.vue`**（holding_count 走副轴半透明柱，回测/模拟盘两处共用，auto-import 生效）
+
+---
+
+## 参数寻优 sweep 契约（2026-09-16）
+
+- `POST /admin/backtest/sweep`：**同步接口**，结果**不落** business_backtest 表；权限复用 `strategy:manage`；无新错误码（策略不存在 11501，参数类一律 11703）
+- 请求：`{strategy_id, start_date, end_date, initial_capital?=1000000, slippage_model?="fixed", slippage_pct?, commission_pct?, stamp_tax_pct?, grid: {stop_loss_pct?[], take_profit_pct?[], trailing_drawdown_pct?[]}, buy_condition_scan?: {condition_index, values[]}}`；日期/滑点校验口径同 `/run`
+- 校验：grid 三参数至少一个非空或存在 buy_condition_scan（全空 11703）；**笛卡尔积 ≤27**（超出 11703，消息含实际组合数）；prompt 型不允许 buy_condition_scan（11703）；rule 型 condition_index 必须指向 `rule_config.buy_conditions` 既有行（11703）
+- 实现：行情/信号/因子序列只准备一次（复用 backtest_runner `_recorded_signals` / `_rule_prepare` 路径，后者为 sweep 重构拆出）；逐组调 engine `run_replay` 纯函数回放——引擎状态全局部，唯一外部可变共享 warnings 列表每组传副本隔离；rule 扫描组用条件 value 覆盖后的 buy_conds 重新 `gen_rule_signals`
+- 响应：`{strategy_id, strategy_name, mode(recorded_replay|rule_daily_eval), total_runs, results: [{params: {stop_loss_pct, take_profit_pct, trailing_drawdown_pct, buy_condition?: {index, factor_id, value}}, total_return_pct, annual_return_pct, max_drawdown_pct, sharpe, win_rate, profit_factor, trade_count, final_equity, is_baseline}]}`——**按 total_return_pct 降序**；策略当前参数所在组合标 `is_baseline=true`，**当前参数不在网格中时自动追加一组 baseline**
+- 已知现象（非 bug）：prompt 型网格可能出现相邻参数组绩效并列——AI 信号自带 stop_loss_price/target_sell_price 时，策略止损/止盈参数仅在信号价格位无效（方向错误/缺失）时兜底，未触发的参数组结果自然一致
+- 前端：回测页「参数寻优」弹窗 `views/ai/backtest/modules/sweep-modal.vue`（自载策略/因子列表）——网格候选值逗号分隔实时算组合数（>27 红字禁提交）、rule 型显买入条件扫描区、结果表最优行高亮 + baseline 行「当前参数」tag、「应用该组参数」Popconfirm 后经 `PUT /admin/strategy/strategies/{id}` 整体写回（rule 含条件行 value，baseline 行禁用）；api `fetchRunBacktestSweep`，typings `Api.Backtest.{BacktestSweepParams,SweepResultItem,BacktestSweepResult,...}`，i18n `page.aiBacktest.sweep.*`
+- 调优数据基线见记忆 `business/2026-09-16_strategy_backtest_baseline.md`（10 策略绩效矩阵，回测记录保留在库）

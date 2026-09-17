@@ -22,9 +22,13 @@ from modules.backtest.schemas.backtest import (
     BacktestRunRequest,
     BacktestItem,
     BacktestDetail,
+    BacktestSweepRequest,
+    BacktestSweepResult,
     BacktestTradeItem,
+    MAX_SWEEP_COMBINATIONS,
 )
 from modules.backtest.services.backtest_service import BacktestService
+from modules.backtest.services.sweep_service import SweepService
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +61,26 @@ async def run_backtest(
         data=BacktestItem.model_validate(backtest),
         msg="已提交回测，执行完成后可通过详情接口查看结果",
     )
+
+
+@backtest_router.post(
+    "/sweep",
+    response_model=ResponseModel[BacktestSweepResult],
+    summary="策略参数寻优（同步执行，不落库）",
+    dependencies=[Depends(require_permission("strategy:manage"))],
+)
+async def sweep_backtest(
+    req: BacktestSweepRequest,
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """对风控参数网格（止损/止盈/回撤止盈，rule 型可加单条买入条件阈值扫描）做
+    笛卡尔积寻优：**同步接口**，组合数上限 27（超出报 11703），行情与信号只准备
+    一次、逐组纯函数回放；预期耗时≈一次普通回测（秒级~几十秒，取决于信号标的数）。
+    中间结果不写 business_backtest 表；results 按总收益率降序，策略当前参数组
+    标 is_baseline（不在网格中时自动追加一组）"""
+    result = await SweepService.run_sweep(db, req)
+    return response_base.success(data=result)
 
 
 @backtest_router.get(

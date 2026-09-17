@@ -121,12 +121,24 @@ class BacktestRunner:
         await db.commit()
 
         if strategy.strategy_type == "rule":
-            signals, bars_by_code, trading_days, warnings = await BacktestRunner._rule_signals(
-                db, strategy, backtest
+            ctx = await BacktestRunner._rule_prepare(
+                db, strategy, backtest.start_date, backtest.end_date
             )
+            signals = gen_rule_signals(
+                buy_conds=ctx["buy_conds"],
+                sell_conds=ctx["sell_conds"],
+                series_by_fid=ctx["series_by_fid"],
+                factor_codes=ctx["factor_codes"],
+                pool_codes=ctx["pool_codes"],
+                trading_days=ctx["trading_days"],
+                names=ctx["names"],
+            )
+            bars_by_code = ctx["bars_by_code"]
+            trading_days = ctx["trading_days"]
+            warnings = ctx["warnings"]
         else:
             signals, bars_by_code, trading_days, warnings = await BacktestRunner._recorded_signals(
-                db, strategy, backtest
+                db, strategy, backtest.start_date, backtest.end_date
             )
 
         # 3. 纯函数逐日回放
@@ -169,7 +181,7 @@ class BacktestRunner:
     # ------------------------------------------------------------------
     @staticmethod
     async def _recorded_signals(
-        db: AsyncSession, strategy: BusinessAiStrategy, backtest: BusinessBacktest
+        db: AsyncSession, strategy: BusinessAiStrategy, start_date: str, end_date: str
     ) -> tuple[list[dict], dict, list[str], list[str]]:
         """取该策略在区间内产生的全部真实 AI 信号（含 executed/skipped 等全部状态，
         关联 Run 排除已删除执行记录，按 run_date+id 升序回放）"""
@@ -181,8 +193,8 @@ class BacktestRunner:
             )
             .where(
                 BusinessStrategySignal.strategy_id == strategy.id,
-                BusinessStrategySignal.run_date >= backtest.start_date,
-                BusinessStrategySignal.run_date <= backtest.end_date,
+                BusinessStrategySignal.run_date >= start_date,
+                BusinessStrategySignal.run_date <= end_date,
                 BusinessStrategySignal.deleted_at.is_(None),
                 BusinessStrategyRun.deleted_at.is_(None),
             )
@@ -216,13 +228,13 @@ class BacktestRunner:
 
         # 抓取行情：交易日历（上证指数）+ 个股日线（baostock 单连接串行）
         market = await fetch_market_data(
-            sorted(stock_codes), backtest.start_date, backtest.end_date
+            sorted(stock_codes), start_date, end_date
         ) if stock_codes else {"trading_days": [], "bars": {}, "failed_codes": []}
 
         trading_days: list[str] = market["trading_days"]
         if not trading_days:
             raise RuntimeError(
-                f"回测区间 {backtest.start_date}~{backtest.end_date} 内无交易日（交易日历为空）"
+                f"回测区间 {start_date}~{end_date} 内无交易日（交易日历为空）"
             )
         for code in market["failed_codes"]:
             warnings.append(f"股票 {code} 区间内无行情数据，其信号将无法成交")
@@ -238,11 +250,15 @@ class BacktestRunner:
     # 信号源：rule 型逐日评估因子条件自产信号（rule_daily_eval，无前视）
     # ------------------------------------------------------------------
     @staticmethod
-    async def _rule_signals(
-        db: AsyncSession, strategy: BusinessAiStrategy, backtest: BusinessBacktest
-    ) -> tuple[list[dict], dict, list[str], list[str]]:
-        """每票 bars 一次载入内存，因子全序列一次算好（RANK 按交易日逐日截面），
-        逐交易日 D 用截至 D-1 的数据评估条件产信号（run_date=D-1，引擎在 D 日开盘成交）"""
+    async def _rule_prepare(
+        db: AsyncSession, strategy: BusinessAiStrategy, start_date: str, end_date: str
+    ) -> dict:
+        """rule 型回测数据准备（行情/因子序列/条件快照，供信号生成复用）。
+
+        每票 bars 一次载入内存，因子全序列一次算好（RANK 按交易日逐日截面）；
+        返回上下文字典：bars_by_code/trading_days/warnings/series_by_fid/
+        factor_codes/pool_codes/names/buy_conds/sell_conds——信号生成见
+        gen_rule_signals（条件 value 可被 sweep 等场景覆盖后重新生成信号）。"""
         cfg = strategy.rule_config or {}
         buy_conds: list[dict] = cfg.get("buy_conditions") or []
         sell_conds: list[dict] = cfg.get("sell_conditions") or []
@@ -291,16 +307,16 @@ class BacktestRunner:
         factor_codes = {fid: f.code for fid, f in factors.items()}
 
         # 行情窗口前置 lookback×2 自然日（供窗口函数预热）；交易日序列截取回测区间
-        start = datetime.strptime(backtest.start_date, "%Y-%m-%d").date()
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
         fetch_start = (start - timedelta(days=RULE_LOOKBACK * 2)).strftime("%Y-%m-%d")
-        market = await fetch_market_data(supported, fetch_start, backtest.end_date)
+        market = await fetch_market_data(supported, fetch_start, end_date)
         trading_days = [
             d for d in market["trading_days"]
-            if backtest.start_date <= d <= backtest.end_date
+            if start_date <= d <= end_date
         ]
         if not trading_days:
             raise RuntimeError(
-                f"回测区间 {backtest.start_date}~{backtest.end_date} 内无交易日（交易日历为空）"
+                f"回测区间 {start_date}~{end_date} 内无交易日（交易日历为空）"
             )
         for code in market["failed_codes"]:
             warnings.append(f"股票 {code} 区间内无行情数据，其信号将无法成交")
@@ -318,13 +334,14 @@ class BacktestRunner:
             series_by_fid[fid] = series
 
         names = await _latest_stock_names(db, supported)
-        signals = gen_rule_signals(
-            buy_conds=buy_conds,
-            sell_conds=sell_conds,
-            series_by_fid=series_by_fid,
-            factor_codes=factor_codes,
-            pool_codes=supported,
-            trading_days=trading_days,
-            names=names,
-        )
-        return signals, bars_by_code, trading_days, warnings
+        return {
+            "bars_by_code": bars_by_code,
+            "trading_days": trading_days,
+            "warnings": warnings,
+            "series_by_fid": series_by_fid,
+            "factor_codes": factor_codes,
+            "pool_codes": supported,
+            "names": names,
+            "buy_conds": buy_conds,
+            "sell_conds": sell_conds,
+        }

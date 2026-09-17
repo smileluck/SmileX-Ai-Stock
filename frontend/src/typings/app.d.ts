@@ -1749,6 +1749,28 @@ declare namespace App {
         slippageAmp: string;
         slippageAmpLabel: string;
         slippageAmpTip: string;
+        sweep: {
+          entry: string;
+          title: string;
+          gridTip: string;
+          stopLoss: string;
+          takeProfit: string;
+          trailing: string;
+          scanTip: string;
+          scanCondition: string;
+          scanValues: string;
+          comboCount: string;
+          comboOver: string;
+          comboEmpty: string;
+          submit: string;
+          resultTitle: string;
+          colParams: string;
+          best: string;
+          baseline: string;
+          apply: string;
+          applyConfirm: string;
+          applySuccess: string;
+        };
         commission: string;
         stampTax: string;
         submit: string;

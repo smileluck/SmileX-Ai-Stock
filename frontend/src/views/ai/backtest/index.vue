@@ -30,6 +30,7 @@ import {
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { $t } from '@/locales';
 import BacktestDetailDrawer from './modules/backtest-detail-drawer.vue';
+import SweepModal from './modules/sweep-modal.vue';
 
 defineOptions({ name: 'AiBacktest' });
 
@@ -182,10 +183,11 @@ const { lastRefreshTime } = useAutoRefresh(
 );
 
 // ================================================================
-// 详情抽屉 / 删除
+// 详情抽屉 / 参数寻优 / 删除
 // ================================================================
 const detailVisible = ref(false);
 const detailBacktestId = ref<number | null>(null);
+const sweepVisible = ref(false);
 
 function openDetail(row: Api.Backtest.BacktestItem) {
   detailBacktestId.value = row.id;
@@ -354,6 +356,10 @@ onMounted(() => {
             <template #icon><icon-mdi-play-circle-outline class="text-icon" /></template>
             {{ $t('page.aiBacktest.submit') }}
           </NButton>
+          <NButton tertiary @click="sweepVisible = true">
+            <template #icon><icon-mdi-tune-variant class="text-icon" /></template>
+            {{ $t('page.aiBacktest.sweep.entry') }}
+          </NButton>
         </NSpace>
       </NForm>
       <NCollapse class="mt-8px">
@@ -443,6 +449,9 @@ onMounted(() => {
 
     <!-- 详情抽屉 -->
     <BacktestDetailDrawer v-model:visible="detailVisible" :backtest-id="detailBacktestId" />
+
+    <!-- 参数寻优弹窗（应用参数后刷新策略下拉） -->
+    <SweepModal v-model:visible="sweepVisible" @applied="loadStrategyOptions" />
   </div>
 </template>
 
