@@ -1147,6 +1147,7 @@ onMounted(() => {
 
       <!-- ============ 回报率统计 ============ -->
       <template v-else-if="activeTab === 'stats'">
+        <div class="h-full overflow-y-auto">
         <NSpace :size="24" class="mb-16px">
           <NStatistic :label="$t('page.aiStrategy.totalReturn')" tabular-nums>
             <span :style="{ color: pnlColor(totalReturn), fontWeight: '600' }">
@@ -1213,6 +1214,7 @@ onMounted(() => {
         </template>
         <div v-else class="mt-8px">
           <NText depth="3" class="text-12px">{{ $t('page.aiStrategy.statsSelectStrategy') }}</NText>
+        </div>
         </div>
       </template>
     </NCard>

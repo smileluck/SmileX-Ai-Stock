@@ -73,7 +73,12 @@ class AgentService:
         messages 为 OpenAI 格式的对话历史（含本次用户输入）。
         """
         # 触发工具模块导入，完成注册（装饰器副作用）
-        from modules.agent.tools import stock_tools, news_tools, research_report_tools  # noqa: F401
+        from modules.agent.tools import (  # noqa: F401
+            stock_tools,
+            news_tools,
+            research_report_tools,
+            factor_tools,
+        )
 
         try:
             resolved = await resolve_model(db, function_code)

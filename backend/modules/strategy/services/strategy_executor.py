@@ -59,12 +59,14 @@ SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 策略分析师，负责�
 - get_latest_news: 最新财经新闻
 - get_research_reports: 个股近期券商研报列表（评级/盈利预测 EPS/PE/机构/日期）
 - get_report_consensus: 个股研报共识（评级分布/覆盖机构数/最新评级时间线）
+- calc_stock_factors: 计算个股量化因子（乖离率/动量/量比/RSI/波动率/日内强弱，辅助买卖点判断）
 
 工作流程：
 1. 先调用工具获取真实行情数据，禁止凭空编造价格和数据
 2. 结合当前持仓情况，按策略要求给出信号
 3. buy_price 必须以用户消息中提供的「实时行情快照」最新价为基准（可在 ±2% 内小幅浮动），
-   严禁使用历史价/记忆中的价格；若快照缺失某股实时价，不得给出该股的 buy 信号
+   严禁使用历史价/记忆中的价格；若快照整体获取失败，buy_price 可改以昨日收盘价为基准，
+   且 reason 中必须标注「快照缺失」；若快照仅缺失个别个股实时价，不得给出该股的 buy 信号
 4. 止损价必须低于 buy_price、目标价必须高于 buy_price，且严格按策略风控比例设置
 5. 若个股已较近期低点大幅拉升（追高风险明显），宁可放弃信号也不要追高买入
 6. 持仓卖出研判：当前封死涨停（涨跌幅达涨停位）的持仓不要给出 sell——连板潜力需保留
@@ -133,7 +135,12 @@ def _to_signal(raw: dict) -> Optional[SignalItem]:
 async def _run_llm(db: AsyncSession, user_prompt: str) -> str:
     """带工具调用的 LLM 循环（复用 agent 的 ReAct 模式，非流式消费），返回最终文本"""
     # 触发工具模块导入，完成注册
-    from modules.agent.tools import stock_tools, news_tools, research_report_tools  # noqa: F401
+    from modules.agent.tools import (  # noqa: F401
+        stock_tools,
+        news_tools,
+        research_report_tools,
+        factor_tools,
+    )
 
     from database.models.sys.ai_model import AiFunctionEnum
 
@@ -260,7 +267,11 @@ def _build_user_prompt(
             "快照中缺失实时价的个股禁止给出 buy 信号）：\n" + "\n".join(quote_lines)
         )
     else:
-        parts.append("注意：实时行情快照获取失败，此时禁止给出任何 buy 信号（只可评估持仓卖出/调整）。")
+        parts.append(
+            "注意：实时行情快照获取失败。允许基于已知数据（昨日收盘价/研报/资金流等）评估并给出 buy 信号，"
+            "此时 buy_price 以昨日收盘价为基准填写，reason 中必须标注「快照缺失」；"
+            "持仓卖出/调整评估照常进行。"
+        )
 
     if is_review:
         parts.append(

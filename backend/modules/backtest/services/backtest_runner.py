@@ -11,7 +11,7 @@
 - prompt 型：加载策略区间内已记录的真实 AI 信号（recorded_replay）
 - rule 型：按 rule_config 逐交易日评估因子条件自产信号（rule_daily_eval，
   信号由 ≤D-1 数据生成，D 日开盘成交，严格无未来函数）
-随后 baostock 抓取交易日历与个股日线 -> 纯函数引擎逐日回放撮合
+随后抓取交易日历与个股日线（akshare-东财主源、baostock 降级）-> 纯函数引擎逐日回放撮合
 -> 落库成交明细/绩效汇总/净值曲线。
 """
 import asyncio
@@ -39,7 +39,7 @@ from modules.strategy.services.rule_executor import RULE_LOOKBACK, gen_rule_sign
 
 logger = logging.getLogger(__name__)
 
-# 后台回测整体超时（秒）：baostock 串行抓取多票日线可能较慢，兜底防悬挂
+# 后台回测整体超时（秒）：行情串行抓取多票日线可能较慢，兜底防悬挂
 BACKTEST_TIMEOUT = 900
 
 # 后台任务强引用集合（防止 asyncio.Task 被 GC），完成后自动移除
@@ -226,7 +226,7 @@ class BacktestRunner:
                 "reason": row.reason,
             })
 
-        # 抓取行情：交易日历（上证指数）+ 个股日线（baostock 单连接串行）
+        # 抓取行情：交易日历（上证指数）+ 个股日线（akshare 主源、baostock 降级）
         market = await fetch_market_data(
             sorted(stock_codes), start_date, end_date
         ) if stock_codes else {"trading_days": [], "bars": {}, "failed_codes": []}

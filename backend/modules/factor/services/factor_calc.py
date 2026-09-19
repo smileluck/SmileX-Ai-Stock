@@ -4,7 +4,7 @@
 """
 因子计算与选股服务
 
-行情复用 backtest 模块的 baostock 抓取（fetch_market_data），
+行情复用 backtest 模块的双源抓取（fetch_market_data，akshare 主源、baostock 降级），
 计算统一走 formula.calc_factor_values（白名单 DSL 求值器）。
 选股为多条件 AND，top_n 表示按因子值降序取前 N 名；不支持全市场选股。
 """

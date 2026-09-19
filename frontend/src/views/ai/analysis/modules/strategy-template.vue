@@ -15,6 +15,7 @@ import {
 import type { DataTableColumns } from 'naive-ui';
 import { fetchCloneStrategy, fetchGetStrategyTemplates, fetchImportStrategy } from '@/service/api';
 import { $t } from '@/locales';
+import { useAppStore } from '@/store/modules/app';
 
 defineOptions({ name: 'StrategyTemplate' });
 
@@ -22,6 +23,8 @@ const emit = defineEmits<{
   /** 克隆/导入成功后通知父级刷新策略管理列表 */
   (e: 'changed'): void;
 }>();
+
+const appStore = useAppStore();
 
 const CATEGORY_LABEL: Record<string, string> = {
   pre_market_auction: $t('page.aiStrategy.categoryAuction'),
@@ -256,6 +259,8 @@ onMounted(loadList);
       size="small"
       :loading="listLoading"
       :scroll-x="1200"
+      :flex-height="!appStore.isMobile"
+      remote
       class="flex-1-hidden"
       :row-key="(row: Api.Strategy.TemplateItem) => row.id"
     />

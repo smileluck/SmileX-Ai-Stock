@@ -38,7 +38,7 @@ from modules.factor.services.formula import calc_factor_values
 
 logger = logging.getLogger(__name__)
 
-# 后台评估整体超时（秒）：baostock 串行抓取多票日线可能较慢，兜底防悬挂
+# 后台评估整体超时（秒）：行情串行抓取多票日线可能较慢，兜底防悬挂
 RULE_EVAL_TIMEOUT = 600
 
 # 因子计算统一回看交易日数

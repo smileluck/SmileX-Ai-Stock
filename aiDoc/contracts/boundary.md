@@ -442,7 +442,7 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - `FactorItem.status` 为 **bool**，前端按 `"1"/"2"` 字符串桥接；`source: preset|imported|custom`；`category` 自由字符串（price/momentum/volume/volatility/custom/imported）
 - 公式 DSL（`modules/factor/services/formula.py`，ast 白名单严禁 eval/exec）：字段 `open/high/low/close/volume/amount/preclose/pct_chg/vwap`；TS 函数 `REF/MA/SUM/MAX/MIN/STD(ddof=1)/DELTA/COUNT`(2参） `CORR`(3参），窗口须正整数常量；标量 `ABS/LOG/SQRT/SIGN/IF`；截面 `RANK`（仅顶层或算术/比较内，universe 内归一化 pos/total ∈(0,1]，值大→近1，NaN 不参与）；禁止属性/下标/链式比较/BoolOp/IfExp/关键字参数
 - 预置因子 17 条（迁移种子，固定 ID 段 2942406616009201-217，按 code 幂等）：bias5/10/20、roc5/10/20、vr1、vr5、vol20、amp20、rsi14、alpha101_006/012/101（source_url=arxiv 1601.00991）、vol_price_corr20、vwap_dev、high20_dev
-- 行情复用 backtest 模块 `fetch_market_data`（baostock 不复权日线，`_BAR_FIELDS` 已扩 volume/amount）；目标日=≤end_date 的最后一个交易日，每股截取末 lookback 条
+- 行情复用 backtest 模块 `fetch_market_data`（双源降级：akshare-东财不复权日线主源（单票 30s 熔断+票间 0.3s）→ baostock 降级（整批 120s 熔断），返回新增 `data_sources` 逐票标注，`_BAR_FIELDS` 已扩 volume/amount）；目标日=≤end_date 的最后一个交易日，每股截取末 lookback 条
 - 前端：`views/ai/factor/`（路由 `ai_factor` /ai/factor，菜单需后台手工新增）三 Tab——因子库（分类/来源/关键字筛选 + 状态开关 + 新建/编辑抽屉（编辑时 code 禁用）+ 导入弹窗（URL/粘贴 JSON 二选一，展示 imported/skipped/errors 明细）；创建走 `/admin/factor/` 尾斜杠）、因子试算（因子+代码/策略带入+目标日+lookback → /calc 结果表 4 位小数 + warnings NAlert）、选股器（手动 codes/策略池二选一 + 动态条件行 AND（>/≥/</≤/前N名）→ /screen 动态因子列结果表 + 存为策略股票池弹窗）；api `service/api/factor.ts` + typings `Api.Factor`；i18n `page.aiFactor.*`
 
 ---
