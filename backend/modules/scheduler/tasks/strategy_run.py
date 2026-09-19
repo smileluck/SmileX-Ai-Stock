@@ -34,15 +34,22 @@ _PERIOD_WINDOWS: dict[str, tuple[dt_time, dt_time]] = {
 }
 
 
-def _match_period(now: datetime) -> str | None:
-    """当前时间命中的执行时段（周一至周五）"""
-    if now.weekday() >= 5:
-        return None
+def _match_period_window(now: datetime) -> str | None:
+    """当前时间命中的执行时段窗口（仅按时刻匹配，不判交易日）"""
     current = now.time()
     for period, (start, end) in _PERIOD_WINDOWS.items():
         if start <= current <= end:
             return period
     return None
+
+
+async def _match_period(now: datetime) -> str | None:
+    """当前时间命中的执行时段（交易日历感知：法定节假日休市，数据源故障降级周一至周五）"""
+    from modules.stock.services.trading_calendar import is_trading_day
+
+    if not await is_trading_day(now.date()):
+        return None
+    return _match_period_window(now)
 
 
 @scheduled_task(
@@ -64,12 +71,12 @@ async def strategy_run_execute():
     from modules.strategy.services.rule_executor import RuleExecutor
 
     now = timezone.now()
-    period = _match_period(now)
+    period = await _match_period(now)
     if not period:
         return {"skipped": True, "reason": "非策略执行时段"}
 
     run_date = now.strftime("%Y-%m-%d")
-    total = {"period": period, "submitted": 0, "skipped": 0, "rejected": 0}
+    total = {"period": period, "submitted": 0, "skipped": 0, "rejected": 0, "failed": 0}
     async for db in get_session():
         strategies = await StrategyService.get_enabled(db)
         for strategy in strategies:
@@ -96,6 +103,12 @@ async def strategy_run_execute():
             except CustomError:
                 # 并发守卫：该策略已有 running 记录（如手动触发正在进行）
                 total["rejected"] += 1
+            except Exception:  # noqa: BLE001  单策略异常不中断整批
+                total["failed"] += 1
+                logger.error(
+                    "策略提交执行异常: strategy=%s(%s) period=%s",
+                    strategy.name, strategy.id, period, exc_info=True,
+                )
     return total
 
 
@@ -104,6 +117,7 @@ async def strategy_run_execute():
     name="AI策略模拟交易引擎",
     description="交易日内每分钟拉取策略股票实时行情：按实时价执行待执行买卖信号（模拟买卖）+ 刷新持仓价格浮盈 + 止损/止盈/目标价自动平仓",
     task_key="strategy.trade_engine",
+    timeout=240,  # 单 tick 含一次批量行情拉取 + 全量信号/持仓处理，显式 4 分钟上限
     is_system=True,
 )
 async def strategy_trade_engine():
@@ -115,3 +129,7 @@ async def strategy_trade_engine():
     async for db in get_session():
         total = await TradeEngine.execute_tick(db)
     return total
+
+
+# 同模块域的清理任务随本模块一并注册（main.py 只显式 import 本模块）
+from modules.scheduler.tasks import strategy_track_cleanup  # noqa: F401,E402

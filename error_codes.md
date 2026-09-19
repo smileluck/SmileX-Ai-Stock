@@ -87,6 +87,8 @@
 | 11509 | 策略导入数据非法 | STRATEGY_IMPORT_INVALID |
 | 11510 | 规则型策略配置非法 | STRATEGY_RULE_CONFIG_INVALID |
 | 11511 | 规则型策略必须配置非空股票池 | STRATEGY_RULE_NO_POOL |
+| 11512 | 当日买入的持仓不可卖出（T+1 规则） | POSITION_T1_LOCKED |
+| 11513 | 无法获取最新行情价格，请显式指定平仓价格 | POSITION_PRICE_UNAVAILABLE |
 
 ### 9. 策略回测 (11701-11800)
 | 错误码 | 错误信息 | 常量名 |

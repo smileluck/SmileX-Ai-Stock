@@ -21,6 +21,7 @@ import logging
 from typing import Any, Optional
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exception.errors import CustomError
@@ -97,7 +98,12 @@ class RuleExecutor:
         """提交一次规则评估：创建 running 状态执行记录并立即返回 run_id，
         评估在后台 asyncio 任务中进行（独立 session，只传 id 不传 ORM 实例）。
 
-        同一策略并发守卫：已存在 running 记录时抛 STRATEGY_ALREADY_RUNNING。
+        注意：本方法会替调用方 session 执行 commit（落库 run 记录与
+        strategy.last_executed_at），调用方不应有未提交的其它 pending 变更。
+
+        同一策略并发守卫：SELECT 预检已有 running 记录时抛 STRATEGY_ALREADY_RUNNING；
+        预检与插入之间的 TOCTOU 窗口由 DB 唯一索引 uq_strategy_run_running
+        （生成列 running_key）兜底，IntegrityError 同样转为 STRATEGY_ALREADY_RUNNING。
         """
         dup = await db.execute(
             select(BusinessStrategyRun.id).where(
@@ -123,7 +129,15 @@ class RuleExecutor:
         )
         db.add(run)
         strategy.last_executed_at = now
-        await db.commit()  # expire_on_commit=False，flush 后 run.id 可直接取用
+        try:
+            await db.commit()  # expire_on_commit=False，flush 后 run.id 可直接取用
+        except IntegrityError:
+            # 并发提交撞 uq_strategy_run_running 唯一索引：对方已抢先 running
+            await db.rollback()
+            raise CustomError(
+                error=CustomErrorCode.STRATEGY_ALREADY_RUNNING,
+                msg="该策略正在执行中，请稍后再试",
+            )
 
         task = asyncio.create_task(
             RuleExecutor._execute_eval(run.id, strategy.id, run_period)

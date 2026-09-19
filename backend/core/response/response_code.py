@@ -147,6 +147,8 @@ class CustomErrorCode(CustomCodeBase):
     STRATEGY_IMPORT_INVALID = (11509, "error.strategy.import_invalid")
     STRATEGY_RULE_CONFIG_INVALID = (11510, "error.strategy.rule_config_invalid")
     STRATEGY_RULE_NO_POOL = (11511, "error.strategy.rule_no_pool")
+    POSITION_T1_LOCKED = (11512, "error.strategy.position_t1_locked")
+    POSITION_PRICE_UNAVAILABLE = (11513, "error.strategy.position_price_unavailable")
     # 大盘/板块 AI 分析 11601-11700
     ANALYSIS_TYPE_INVALID = (11601, "error.analysis.type_invalid")
     ANALYSIS_RUN_NOT_FOUND = (11602, "error.analysis.run_not_found")

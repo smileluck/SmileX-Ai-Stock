@@ -7,9 +7,15 @@
 
 暂无。
 
+## 经验记忆
+
+- [2026-09-19 MySQL 并发唯一约束与多 worker 调度器选主](./lessons/2026-09-19-mysql-partial-unique-scheduler-leader.md) — 生成列模拟部分唯一索引；max_instances 按 job id 生效；多 worker lifespan 需 GET_LOCK 选主 + follower 写传播；非确定性判定不缓存
+
 ## 业务需求记忆
 
 详细索引见 [business/README.md](./business/README.md)。近期：
+
+- [2026-09-19 策略执行链路并发与健壮性修复](./business/2026-09-19_strategy_execution_hardening.md) — 信号/持仓条件 UPDATE + running_key 生成列唯一索引（迁移0039）；调度器 GET_LOCK 选主 + 手动触发串行化 + leader 周期 resync；交易日历/行情降级告警/批处理容错；分页与分层规范对齐、track 写权限拆分；新错误码 11512/11513
 
 - [2026-09-14 热门个股记录炸板股（涨停后破板）](./business/2026-09-14_limit_up_broken_pool.md) — 涨停池表加 `pool_type` 判别列（迁移 0032）+ 东财炸板池 `stock_zt_pool_zbgc_em` 双池同抓；`/list` 加 pool_type 筛选、stats 加 broken_count（涨停口径不变仅封板股）；前端加池类型筛选/状态列/炸板家数
 - [2026-09-11 报告英文残留根治（sanitize 双 bug + 历史修复）](./business/2026-09-11_report_english_residual_fix.md) — think 块致 json 保护失效 + `\b` 边界对中英粘连失效；修复为剥 think + ASCII 环视边界 + 字段名映射扩充；修复脚本恢复 14 个历史 run 枚举码（JSONB 须 deepcopy 重赋值）

@@ -23,7 +23,12 @@ from database.models.business.strategy import (
     BusinessStrategySignal,
 )
 from database.utils.timezone import timezone
-from modules.strategy.services.position_service import PositionService, is_t1_locked
+from modules.stock.services.trading_calendar import is_trading_day
+from modules.strategy.services.position_service import (
+    PositionService,
+    close_position_atomic,
+    is_t1_locked,
+)
 from modules.strategy.services.quote_helper import fetch_latest_quotes
 
 logger = logging.getLogger(__name__)
@@ -55,10 +60,16 @@ REF_PRICE_MAX_DEVIATION_PCT = 3.0
 # 涨停保护触发的 AI 复核节流窗口（分钟）：同策略窗口内已有复核运行时不重复提交
 REVIEW_THROTTLE_MINUTES = 30
 
+# 行情降级告警：请求了行情却连续 N 个 tick 拿到空 dict 时 logger.error 结构化告警
+QUOTE_EMPTY_ALERT_THRESHOLD = 5
 
-def _in_trading_hours(now: datetime) -> bool:
-    """是否处于连续竞价时段（周一至周五）"""
-    if now.weekday() >= 5:
+# 模块级连续空行情 tick 计数（多 worker 各自计数，告警按进程粒度）
+_empty_quote_ticks = 0
+
+
+async def _in_trading_hours(now: datetime) -> bool:
+    """是否处于连续竞价时段（交易日历感知：法定节假日休市，数据源故障降级周一至周五）"""
+    if not await is_trading_day(now.date()):
         return False
     current = now.time()
     return any(start <= current <= end for start, end in _TRADING_WINDOWS)
@@ -160,7 +171,7 @@ class TradeEngine:
             await db.commit()
 
         # ---- 3. 非交易时段：仅做维护动作 ----
-        if not _in_trading_hours(now):
+        if not await _in_trading_hours(now):
             total.update({"skipped_tick": True, "reason": "非交易时段"})
             return total
 
@@ -181,13 +192,26 @@ class TradeEngine:
         )
         pending_signals = list(sig_result.scalars().all())
 
-        # 策略已停用/删除：信号作废
+        # 策略已停用/删除：信号作废（条件 UPDATE 保持 pending→expired 原子，
+        # 已被并发执行者认领的信号不受影响）
+        alive_signals = []
         for sig in pending_signals:
-            if sig.strategy_id not in strategies:
-                sig.status = "expired"
-                sig.result_msg = "策略已停用或删除"
+            if sig.strategy_id in strategies:
+                alive_signals.append(sig)
+                continue
+            result = await db.execute(
+                update(BusinessStrategySignal)
+                .where(
+                    BusinessStrategySignal.id == sig.id,
+                    BusinessStrategySignal.status == "pending",
+                    BusinessStrategySignal.deleted_at.is_(None),
+                )
+                .values(status="expired", result_msg="策略已停用或删除")
+                .execution_options(synchronize_session=False)
+            )
+            if (result.rowcount or 0) == 1:
                 total["expired_signals"] += 1
-        pending_signals = [s for s in pending_signals if s.status == "pending"]
+        pending_signals = alive_signals
 
         # ---- 5. 全部持仓 + 一次批量行情（信号股 ∪ 持仓股） ----
         pos_result = await db.execute(
@@ -200,6 +224,30 @@ class TradeEngine:
 
         codes = {s.stock_code for s in pending_signals} | {p.stock_code for p in positions}
         quotes = await fetch_latest_quotes(list(codes)) if codes else {}
+        # 行情降级告警：请求了行情却连续拿到空 dict（接口故障时风控整体静默失效，
+        # 须以结构化 ERROR 暴露，参照 main.py startup_degraded 风格）
+        global _empty_quote_ticks
+        if codes and not quotes:
+            _empty_quote_ticks += 1
+            if _empty_quote_ticks >= QUOTE_EMPTY_ALERT_THRESHOLD:
+                logger.error(
+                    "实时行情连续 %d 个 tick 为空，信号执行与风控降级运行（请求 %d 只）",
+                    _empty_quote_ticks, len(codes),
+                    extra={
+                        "event": "quote_degraded",
+                        "component": "trade_engine",
+                        "consecutive_ticks": _empty_quote_ticks,
+                        "codes": len(codes),
+                    },
+                )
+        elif quotes:
+            if _empty_quote_ticks >= QUOTE_EMPTY_ALERT_THRESHOLD:
+                logger.info(
+                    "实时行情已恢复（此前连续 %d 个 tick 为空）",
+                    _empty_quote_ticks,
+                    extra={"event": "quote_recovered", "component": "trade_engine"},
+                )
+            _empty_quote_ticks = 0
         prices = {code: q["price"] for code, q in quotes.items()}
         changes = {code: q["change_pct"] for code, q in quotes.items() if q["change_pct"] is not None}
 
@@ -219,51 +267,86 @@ class TradeEngine:
 
             if sig.action == "sell":
                 if pos is None:
-                    sig.status = "skipped"
-                    sig.result_msg = "无持仓可卖"
-                    total["skipped"] += 1
+                    if await TradeEngine._claim_signal(
+                        db, sig, status="skipped", result_msg="无持仓可卖"
+                    ):
+                        total["skipped"] += 1
                     continue
                 if not price:
                     continue
                 # T+1：当日买入的持仓不可卖出，信号保持待执行至下一交易日
                 if is_t1_locked(pos.buy_time, now):
                     continue
-                TradeEngine._close_position(pos, price, now)
-                holding_map[sig.strategy_id].pop(sig.stock_code, None)
-                sig.status, sig.executed_at, sig.executed_price = "executed", now, price
-                sig.result_msg = f"按实时价 {price} 平仓"
-                _bump_run_delta(run_delta, sig.run_id, closed=1)
-                total["executed"] += 1
-                total["closed"] += 1
+                # 先条件 UPDATE 认领信号再平仓：认领失败说明已被并发执行者处理或已作废
+                if not await TradeEngine._claim_signal(
+                    db, sig, status="executed", executed_at=now, executed_price=price,
+                    result_msg=f"按实时价 {price} 平仓",
+                ):
+                    continue
+                # 除零守卫：buy_price 脏数据（<=0）时不计算收益率
+                buy_price = float(pos.buy_price)
+                return_rate = (
+                    round((price - buy_price) / buy_price * 100, 4) if buy_price > 0 else None
+                )
+                # 持仓同样走条件 UPDATE（holding→closed），并发平仓只有一个生效
+                if await close_position_atomic(
+                    db, pos, price=price, now=now,
+                    sell_reason="ai_signal", return_rate=return_rate,
+                ):
+                    holding_map[sig.strategy_id].pop(sig.stock_code, None)
+                    _bump_run_delta(run_delta, sig.run_id, closed=1)
+                    total["closed"] += 1
+                    total["executed"] += 1
+                else:
+                    # 信号已认领但持仓被并发平仓：不计 executed（信号未真正成交），
+                    # 并移出 holding_map，避免同 tick 后续同股信号读到 stale 持仓
+                    logger.warning(
+                        "信号已认领但持仓已被并发平仓: signal_id=%s position_id=%s",
+                        sig.id, pos.id,
+                    )
+                    holding_map[sig.strategy_id].pop(sig.stock_code, None)
                 continue
 
             if sig.action == "buy":
                 if pos is not None:
-                    sig.status = "skipped"
-                    sig.result_msg = "已持仓，跳过重复买入"
-                    total["skipped"] += 1
+                    if await TradeEngine._claim_signal(
+                        db, sig, status="skipped", result_msg="已持仓，跳过重复买入"
+                    ):
+                        total["skipped"] += 1
                     continue
                 if len(holding_map.get(sig.strategy_id, {})) >= strategy.max_positions:
-                    sig.status = "skipped"
-                    sig.result_msg = f"已达最大持仓数 {strategy.max_positions}"
-                    total["skipped"] += 1
+                    if await TradeEngine._claim_signal(
+                        db, sig, status="skipped",
+                        result_msg=f"已达最大持仓数 {strategy.max_positions}",
+                    ):
+                        total["skipped"] += 1
                     continue
                 if not price:
                     continue
                 # 参考价偏差守卫：实时价偏离 AI 参考价超阈值时拒单
-                # （说明 AI 分析时看到的价格已严重过期，止损/目标位均不可信）
-                if sig.ref_buy_price:
+                # （说明 AI 分析时看到的价格已严重过期，止损/目标位均不可信）。
+                # 口径差异：rule 策略参考价锚定 D-1 收盘价（rule_executor），
+                # 高开/低开超阈值是正常行情而非 LLM 价格失真，故 rule 策略跳过该守卫。
+                if sig.ref_buy_price and strategy.strategy_type != "rule":
                     ref = float(sig.ref_buy_price)
                     if ref > 0:
                         deviation_pct = abs(price - ref) / ref * 100
                         if deviation_pct > REF_PRICE_MAX_DEVIATION_PCT:
-                            sig.status = "skipped"
-                            sig.result_msg = (
-                                f"实时价 {price} 与参考价 {ref} 偏差 {deviation_pct:.1f}% "
-                                f"(>{REF_PRICE_MAX_DEVIATION_PCT}%)，拒单"
-                            )
-                            total["skipped"] += 1
+                            if await TradeEngine._claim_signal(
+                                db, sig, status="skipped",
+                                result_msg=(
+                                    f"实时价 {price} 与参考价 {ref} 偏差 {deviation_pct:.1f}% "
+                                    f"(>{REF_PRICE_MAX_DEVIATION_PCT}%)，拒单"
+                                ),
+                            ):
+                                total["skipped"] += 1
                             continue
+                # 先条件 UPDATE 认领信号再建仓：并发执行者只有一个认领成功，杜绝重复建仓
+                if not await TradeEngine._claim_signal(
+                    db, sig, status="executed", executed_at=now, executed_price=price,
+                    result_msg=f"按实时价 {price} 建仓",
+                ):
+                    continue
                 # AI 价格位校验修正：止损必须低于买价、目标必须高于买价
                 stop_loss, target_sell = _sanitize_price_levels(
                     price, strategy, sig.stop_loss_price, sig.target_sell_price
@@ -288,8 +371,6 @@ class TradeEngine:
                 )
                 db.add(pos)
                 holding_map.setdefault(sig.strategy_id, {})[sig.stock_code] = pos
-                sig.status, sig.executed_at, sig.executed_price = "executed", now, price
-                sig.result_msg = f"按实时价 {price} 建仓"
                 _bump_run_delta(run_delta, sig.run_id, opened=1)
                 total["executed"] += 1
                 total["opened"] += 1
@@ -297,22 +378,59 @@ class TradeEngine:
 
             # adjust：更新预估卖点/止损价（方向校验，防立即触发止损/达标）
             if pos is None:
-                sig.status = "skipped"
-                sig.result_msg = "无持仓可调整"
-                total["skipped"] += 1
+                if await TradeEngine._claim_signal(
+                    db, sig, status="skipped", result_msg="无持仓可调整"
+                ):
+                    total["skipped"] += 1
                 continue
             if not price:
                 continue
-            if sig.target_sell_price and sig.target_sell_price > price:
-                pos.target_sell_price = sig.target_sell_price
-            elif sig.target_sell_price:
-                sig.result_msg = (sig.result_msg or "") + " 目标价不高于现价已忽略"
-            if sig.stop_loss_price and sig.stop_loss_price < price:
-                pos.stop_loss_price = sig.stop_loss_price
-            elif sig.stop_loss_price:
-                sig.result_msg = (sig.result_msg or "") + " 止损价不低于现价已忽略"
-            sig.status, sig.executed_at = "executed", now
-            sig.result_msg = sig.result_msg or "已调整卖点/止损价"
+            new_target = None
+            new_stop = None
+            notes: list[str] = []
+            if sig.target_sell_price:
+                if sig.target_sell_price > price:
+                    new_target = sig.target_sell_price
+                else:
+                    notes.append("目标价不高于现价已忽略")
+            if sig.stop_loss_price:
+                # 止损价只允许上移（且须低于现价）：防 AI 无限放宽止损导致风控失效
+                if (sig.stop_loss_price < price
+                        and sig.stop_loss_price > float(pos.stop_loss_price or 0)):
+                    new_stop = sig.stop_loss_price
+                else:
+                    notes.append("止损价未上移已忽略")
+            if not await TradeEngine._claim_signal(
+                db, sig, status="executed", executed_at=now, executed_price=price,
+                result_msg="；".join(notes) or "已调整卖点/止损价",
+            ):
+                continue
+            # 持仓字段更新也走条件 UPDATE（WHERE status='holding'）：
+            # 持仓被并发平仓时 rowcount==0，跳过内存赋值防覆盖并发平仓结果
+            pos_updates = {}
+            if new_target is not None:
+                pos_updates["target_sell_price"] = new_target
+            if new_stop is not None:
+                pos_updates["stop_loss_price"] = new_stop
+            if pos_updates:
+                result = await db.execute(
+                    update(BusinessStrategyPosition)
+                    .where(
+                        BusinessStrategyPosition.id == pos.id,
+                        BusinessStrategyPosition.status == "holding",
+                        BusinessStrategyPosition.deleted_at.is_(None),
+                    )
+                    .values(**pos_updates)
+                    .execution_options(synchronize_session=False)
+                )
+                if (result.rowcount or 0) == 1:
+                    for field, value in pos_updates.items():
+                        setattr(pos, field, value)
+                else:
+                    logger.info(
+                        "adjust 时持仓已被并发平仓，跳过赋值: position_id=%s", pos.id
+                    )
+                    holding_map[sig.strategy_id].pop(sig.stock_code, None)
             total["executed"] += 1
 
         # ---- 7. 来源 Run 计数累加（新建仓/平仓数） ----
@@ -366,7 +484,9 @@ class TradeEngine:
         """
         if not strategy_ids:
             return 0
-        from modules.strategy.services.strategy_executor import StrategyExecutor
+        # 函数内延迟导入防循环依赖；走 StrategyService.submit_run 按 strategy_type
+        # 分流（rule 策略复核走规则评估而非 LLM），并发守卫由执行器统一兜底
+        from modules.strategy.services.strategy_service import StrategyService
 
         throttle_before = now - timedelta(minutes=REVIEW_THROTTLE_MINUTES)
         submitted = 0
@@ -385,8 +505,8 @@ class TradeEngine:
             if dup.scalar_one_or_none() is not None:
                 continue
             try:
-                await StrategyExecutor.submit_run(
-                    db, strategy, run_period="review", trigger_type="review"
+                await StrategyService.submit_run(
+                    db, sid, run_period="review", trigger_type="review"
                 )
                 submitted += 1
             except Exception:  # noqa: BLE001  并发守卫等业务异常不阻断 tick
@@ -397,13 +517,29 @@ class TradeEngine:
         return submitted
 
     @staticmethod
-    def _close_position(pos: BusinessStrategyPosition, price: float, now: datetime) -> None:
-        """按给定价格平仓（AI 信号卖出）"""
-        buy_price = float(pos.buy_price)
-        pos.status = "closed"
-        pos.sell_price = price
-        pos.sell_time = now
-        pos.sell_reason = "ai_signal"
-        pos.latest_price = price
-        pos.return_rate = round((price - buy_price) / buy_price * 100, 4)
-        pos.floating_pnl_pct = pos.return_rate
+    async def _claim_signal(
+        db: AsyncSession,
+        sig: BusinessStrategySignal,
+        **values,
+    ) -> bool:
+        """条件 UPDATE 认领信号（pending→终态原子化）：rowcount==1 表示认领成功。
+
+        认领失败（rowcount==0：已被并发执行者处理或被新一轮分析作废）时调用方必须跳过。
+        synchronize_session=False 不会同步内存 ORM 对象，认领成功后手动同步字段，
+        保证依赖该对象的后续逻辑看到一致状态。
+        """
+        result = await db.execute(
+            update(BusinessStrategySignal)
+            .where(
+                BusinessStrategySignal.id == sig.id,
+                BusinessStrategySignal.status == "pending",
+                BusinessStrategySignal.deleted_at.is_(None),
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        if (result.rowcount or 0) != 1:
+            return False
+        for field, value in values.items():
+            setattr(sig, field, value)
+        return True

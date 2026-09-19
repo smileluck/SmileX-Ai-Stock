@@ -83,12 +83,6 @@ class StrategyCreateRequest(BaseModel):
     )
 
 
-class StrategyUpdateRequest(StrategyCreateRequest):
-    """更新策略请求（全量字段）"""
-
-    pass
-
-
 class StrategyItem(BaseModel):
     """策略列表项"""
 

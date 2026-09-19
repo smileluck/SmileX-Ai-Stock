@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exception.errors import CustomError
 from core.response.response_code import CustomErrorCode
 from database.models.business.factor import BusinessFactor
-from database.models.business.strategy import BusinessAiStrategy
+from database.models.business.strategy import BusinessAiStrategy, BusinessStrategyRun
 from modules.strategy.schemas.strategy import (
     EXECUTE_PERIODS,
     STRATEGY_CATEGORIES,
@@ -117,15 +117,12 @@ class StrategyService:
         return strategy
 
     @staticmethod
-    async def get_list(
-        db: AsyncSession,
+    def build_list_query(
         name: str | None = None,
         status: bool | None = None,
         category: str | None = None,
-        page: int = 1,
-        page_size: int = 20,
-    ) -> tuple[list[StrategyItem], int]:
-        """分页查询策略列表，返回 (items, total)"""
+    ):
+        """策略列表查询（创建时间倒序），供 Endpoint 层走 get_paginated_results 统一分页"""
         conditions = [BusinessAiStrategy.deleted_at.is_(None)]
         if name:
             conditions.append(BusinessAiStrategy.name.ilike(f"%{name}%"))
@@ -133,23 +130,45 @@ class StrategyService:
             conditions.append(BusinessAiStrategy.status == status)
         if category:
             conditions.append(BusinessAiStrategy.category == category)
-
-        count_result = await db.execute(
-            select(func.count()).select_from(BusinessAiStrategy).where(*conditions)
-        )
-        total = count_result.scalar() or 0
-
-        result = await db.execute(
+        return (
             select(BusinessAiStrategy)
             .where(*conditions)
             .order_by(BusinessAiStrategy.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
         )
-        items = [
-            StrategyItem.model_validate(row) for row in result.scalars().all()
-        ]
-        return items, total
+
+    @staticmethod
+    def build_runs_query(strategy_id: int):
+        """策略执行记录查询（创建时间倒序），供 Endpoint 层走 get_paginated_results 统一分页"""
+        return (
+            select(BusinessStrategyRun)
+            .where(
+                BusinessStrategyRun.strategy_id == strategy_id,
+                BusinessStrategyRun.deleted_at.is_(None),
+            )
+            .order_by(BusinessStrategyRun.created_at.desc())
+        )
+
+    @staticmethod
+    async def submit_run(
+        db: AsyncSession,
+        strategy_id: int,
+        run_period: str = "manual",
+        trigger_type: str = "manual",
+    ) -> int:
+        """提交一次策略执行：按 strategy_type 分流到对应执行器（prompt 型走 LLM 分析，
+        rule 型走规则评估），返回 run_id；分析/评估在执行器内异步进行。
+
+        执行器为函数内延迟导入：rule_executor → factor_calc 顶层引用本模块，
+        顶层导入会构成循环依赖。
+        """
+        from modules.strategy.services.rule_executor import RuleExecutor
+        from modules.strategy.services.strategy_executor import StrategyExecutor
+
+        strategy = await StrategyService.get_by_id(db, strategy_id)
+        executor = RuleExecutor if strategy.strategy_type == "rule" else StrategyExecutor
+        return await executor.submit_run(
+            db, strategy, run_period=run_period, trigger_type=trigger_type
+        )
 
     @staticmethod
     async def get_enabled(db: AsyncSession) -> list[BusinessAiStrategy]:
@@ -362,20 +381,31 @@ class StrategyService:
         )
         clone_counts = dict(clone_rows.all())
 
-        # 最近一次 success 回测（批量取回后按策略取最新一条）
-        bt_rows = await db.execute(
-            select(BusinessBacktest)
+        # 最近一次 success 回测：子查询按策略取 max(id)（雪花 ID 随时间单调递增，
+        # 即最新一条），只回表必要列，避免把全部回测的 equity_curve/result 大 JSON
+        # 整行拉进内存再按策略去重
+        latest_bt_sq = (
+            select(
+                BusinessBacktest.strategy_id.label("strategy_id"),
+                func.max(BusinessBacktest.id).label("latest_id"),
+            )
             .where(
                 BusinessBacktest.strategy_id.in_(ids),
                 BusinessBacktest.status == "success",
                 BusinessBacktest.deleted_at.is_(None),
             )
-            .order_by(BusinessBacktest.created_at.desc())
+            .group_by(BusinessBacktest.strategy_id)
+            .subquery()
         )
-        last_bt: dict[int, BusinessBacktest] = {}
-        for bt in bt_rows.scalars().all():
-            if bt.strategy_id not in last_bt:
-                last_bt[bt.strategy_id] = bt
+        bt_rows = await db.execute(
+            select(
+                BusinessBacktest.strategy_id,
+                BusinessBacktest.start_date,
+                BusinessBacktest.end_date,
+                BusinessBacktest.result,
+            ).join(latest_bt_sq, BusinessBacktest.id == latest_bt_sq.c.latest_id)
+        )
+        last_bt = {row.strategy_id: row for row in bt_rows.all()}
 
         items = []
         for s in strategies:

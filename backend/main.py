@@ -83,26 +83,43 @@ async def lifespan(app: FastAPI):
     import modules.scheduler.tasks.rotation_sync  # noqa: F401
 
     manager = SchedulerManager.get_instance()
-    manager.start()
+
+    async def _start_scheduler_as_leader():
+        """抢到 leader 锁后的启动流程：启动调度器 + 种子数据 + 从 DB 同步 job"""
+        manager.start()
+        # 种子数据：菜单 + 同步装饰器注册的任务（非致命：缺失只影响菜单可见性）
+        # 必须先 seed 再从 DB 同步 job：否则新注册的任务在首次入库的这次启动中
+        # 只写 DB、不进调度器，要等到下一次重启才会真正按 cron 触发
+        try:
+            from modules.scheduler.seed import seed_scheduler
+            async for db_seed in get_session():
+                await seed_scheduler(db_seed)
+        except Exception as exc:
+            # 降级为 WARNING：不影响核心功能，ERROR 会污染 5xx 错误率统计
+            logger.warning("定时任务种子数据加载失败，部分预置任务可能缺失: %s", exc)
+        async for db_sync in get_session():
+            await manager.sync_jobs_from_db(db_sync)
+        logger.info("定时任务同步完成")
+        # 周期性全量 resync：follower worker 上的任务 CRUD 只写 DB，
+        # 靠这个内置 job 传播到本 leader 进程的调度器；调度器停止时随之消失
+        manager.enable_periodic_resync()
+
+    # 多 worker（gunicorn）部署时每个进程都会走到这里，必须先选主：
+    # 经 MySQL GET_LOCK 抢到锁的进程才启动调度器并执行 seed/sync（sync_jobs_from_db
+    # 依赖调度器已启动，未抢到锁的进程整体跳过）；未抢到的进程由后台任务周期性重试，
+    # leader 宕机或持锁连接断开后接管。leader 的启动/同步失败仍会向上抛出，阻止应用启动
+    from modules.scheduler.core.leader_lock import SchedulerLeaderLock
+    leader_lock = SchedulerLeaderLock(
+        on_acquire=_start_scheduler_as_leader,
+        on_lose=manager.stop,
+    )
     app.state.scheduler_manager = manager
-    # 种子数据：菜单 + 同步装饰器注册的任务（非致命：缺失只影响菜单可见性）
-    # 必须先 seed 再从 DB 同步 job：否则新注册的任务在首次入库的这次启动中
-    # 只写 DB、不进调度器，要等到下一次重启才会真正按 cron 触发
-    try:
-        from modules.scheduler.seed import seed_scheduler
-        async for db_seed in get_session():
-            await seed_scheduler(db_seed)
-    except Exception as exc:
-        # 降级为 WARNING：不影响核心功能，ERROR 会污染 5xx 错误率统计
-        logger.warning("定时任务种子数据加载失败，部分预置任务可能缺失: %s", exc)
-    async for db_sync in get_session():
-        await manager.sync_jobs_from_db(db_sync)
-    logger.info("定时任务同步完成")
+    app.state.scheduler_leader_lock = leader_lock
+    await leader_lock.start()
     yield
-    # 停止定时任务调度器
+    # 停止定时任务调度器（若本进程是 leader）并释放 leader 锁
     try:
-        from modules.scheduler.core.scheduler import SchedulerManager
-        SchedulerManager.get_instance().stop()
+        await leader_lock.stop()
     except Exception as exc:
         logger.error("定时任务调度器停止异常: %s", exc)
     # 关闭 Redis 连接池

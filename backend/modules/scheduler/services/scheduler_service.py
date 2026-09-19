@@ -170,7 +170,7 @@ class SchedulerService:
         manager = SchedulerManager.get_instance()
         triggered = manager.trigger_task_in_background(task.id)
         if not triggered:
-            raise ConflictError(msg="调度器未运行，无法触发任务")
+            raise ConflictError(msg="无法触发任务：本进程非调度器主节点，或该任务已有手动触发在执行中")
         return task
 
     @staticmethod

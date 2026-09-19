@@ -13,6 +13,7 @@ import traceback
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from apscheduler.jobstores.base import ConflictingIdError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -26,6 +27,16 @@ from database.models.sys.task_log import SysScheduledTaskLog
 from database.utils.timezone import DEFAULT_TIMEZONE
 
 logger = logging.getLogger(__name__)
+
+# 进程内 per-task 执行互斥锁：key=task.id。同一任务的手动触发与 cron tick
+# 并发时后到者直接跳过，防止任务副作用（建仓/LLM 分析等）被并发执行两次
+_task_execution_locks: dict[int, asyncio.Lock] = {}
+
+# 周期性全量 resync 的内置 job id：直接注册在 APScheduler 上（不入库），
+# 让 follower worker 上对任务表的 CRUD 能传播到 leader 进程的调度器。
+# sync_jobs_from_db 会保留该 job，避免全量同步时把自己删掉
+RESYNC_JOB_ID = "__scheduler_db_resync__"
+RESYNC_INTERVAL_SECONDS = 60
 
 
 class SchedulerManager:
@@ -66,8 +77,10 @@ class SchedulerManager:
             logger.info("定时任务调度器已停止")
 
     async def sync_jobs_from_db(self, db: AsyncSession):
-        """从数据库同步任务到 APScheduler"""
-        self._scheduler.remove_all_jobs()
+        """从数据库同步任务到 APScheduler（保留 RESYNC_JOB_ID 等进程内内置 job）"""
+        for job in self._scheduler.get_jobs():
+            if job.id != RESYNC_JOB_ID:
+                self._scheduler.remove_job(job.id)
 
         stmt = select(SysScheduledTask).where(
             SysScheduledTask.status == True,  # noqa: E712
@@ -120,22 +133,53 @@ class SchedulerManager:
 
         await _execute_task(task, func, db, triggered_by=triggered_by)
 
+    def enable_periodic_resync(self, interval_seconds: int = RESYNC_INTERVAL_SECONDS):
+        """注册周期性全量 resync job（幂等，replace_existing）。
+
+        leader 只在启动时 sync 一次的话，follower worker 上对任务表的
+        创建/修改/启停只写 DB，leader 的 APScheduler 永远感知不到；
+        该内置 job 周期性重放 DB -> 调度器的全量同步。调度器停止时
+        （失去 leader 身份/进程退出）job 随之消失，无需额外清理。
+        """
+        self._scheduler.add_job(
+            _resync_jobs_wrapper,
+            trigger=IntervalTrigger(seconds=interval_seconds),
+            id=RESYNC_JOB_ID,
+            name="scheduler:db-resync",
+            replace_existing=True,
+        )
+        logger.info("已注册周期性任务同步 job（每 %ds 全量 resync）", interval_seconds)
+
     def trigger_task_in_background(self, task_id: int) -> bool:
         """把任务投递到调度器后台立即执行（fire-and-forget），不阻塞调用方。
 
         手动触发接口用它而非 run_task_now：HTTP 请求立即返回，
         任务在后台用独立 session 执行，不受请求生命周期影响。
+
+        job id 固定为 manual-{task_id}：排队中的重复触发撞 ConflictingIdError
+        返回 False；但 DateTrigger 是一次性的，执行开始 job id 就空出，所以
+        执行中的去重要靠 per-task 锁——任务正在执行时直接返回 False
+        （不替换、不排队第二个），配合 max_instances=1 与 _execute_task 的
+        per-task 锁保证手动触发与 cron tick 不并发。
         """
         if not self.running:
             logger.warning("调度器未运行，无法后台触发任务 task_id=%s", task_id)
             return False
-        self._scheduler.add_job(
-            _manual_job_wrapper,
-            trigger=DateTrigger(run_date=datetime.now(timezone.utc)),
-            args=[task_id],
-            id=f"manual-{task_id}-{int(datetime.now().timestamp() * 1000)}",
-            name=f"manual:{task_id}",
-        )
+        lock = _task_execution_locks.get(task_id)
+        if lock is not None and lock.locked():
+            logger.warning("任务 task_id=%s 正在执行中，拒绝重复手动触发", task_id)
+            return False
+        try:
+            self._scheduler.add_job(
+                _manual_job_wrapper,
+                trigger=DateTrigger(run_date=datetime.now(timezone.utc)),
+                args=[task_id],
+                id=f"manual-{task_id}",
+                name=f"manual:{task_id}",
+            )
+        except ConflictingIdError:
+            logger.warning("任务 task_id=%s 已有手动触发在排队中，忽略本次重复触发", task_id)
+            return False
         return True
 
     @staticmethod
@@ -199,6 +243,17 @@ class SchedulerManager:
         except Exception:
             pass
         return None
+
+
+async def _resync_jobs_wrapper():
+    """周期性全量 resync job 入口：独立 session，失败只记日志不中断调度器"""
+    from database.manager.async_manager import get_session
+
+    try:
+        async for db in get_session():
+            await SchedulerManager.get_instance().sync_jobs_from_db(db)
+    except Exception as exc:
+        logger.error("周期性同步定时任务失败（下一轮将重试）: %s", exc)
 
 
 async def _manual_job_wrapper(task_id: int):
@@ -266,6 +321,28 @@ async def _scheduled_job_wrapper(task_id: int):
 
 
 async def _execute_task(
+    task: SysScheduledTask,
+    func,
+    db: AsyncSession,
+    triggered_by: str = "scheduler",
+):
+    """任务执行入口：进程内 per-task 串行化后委托 _do_execute_task。
+
+    手动触发（_manual_job_wrapper）与 cron tick（_scheduled_job_wrapper）都经
+    这里；同一任务并发触发时后到者直接跳过（不执行、不写 running 日志记录）。
+    """
+    lock = _task_execution_locks.setdefault(task.id, asyncio.Lock())
+    if lock.locked():
+        logger.warning(
+            "任务 %s (task_id=%s) 正在执行中，跳过本次 %s 触发",
+            task.task_key, task.id, triggered_by,
+        )
+        return
+    async with lock:
+        await _do_execute_task(task, func, db, triggered_by=triggered_by)
+
+
+async def _do_execute_task(
     task: SysScheduledTask,
     func,
     db: AsyncSession,

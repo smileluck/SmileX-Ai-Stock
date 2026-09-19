@@ -312,7 +312,9 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 
 ## AI 分析策略模块契约（2026-08-16，2026-08-18 更新）
 
-- 前缀 `/admin/strategy`；权限码：`strategy:manage`（策略 CRUD）、`strategy:run`（手动执行）、`strategy:position:list`（持仓/统计/跟踪日志/手动触发跟踪）、`strategy:position:close`（手动平仓）
+- 前缀 `/admin/strategy`；权限码：`strategy:manage`（策略 CRUD）、`strategy:run`（手动执行）、`strategy:position:list`（持仓/统计/跟踪日志等查询类）、`strategy:position:track`（手动触发持仓跟踪，2026-09-19 由 `strategy:position:list` 拆出为写级权限，BUTTON 种子需随迁移补充）、`strategy:position:close`（手动平仓）
+- **序列化约定豁免（2026-09-19）**：strategy 模块 schemas 有意不走全站 `BaseRespEntity` 约定——`status` 输出 bool 原样（`StrategyItem.status: bool`，非 `"1"/"2"` 字符串）、时间字段输出 ISO 8601 datetime（非 `YYYY-MM-DD HH:mm:ss` 字符串）；前端 `Api.Strategy.*`（`frontend/src/typings/api/strategy.d.ts`）按 boolean / ISO string 声明并消费（页面 `views/ai/analysis/`），前后端自洽，新接口继续沿用该豁免，不回改存量
+- 分页统一（2026-09-19）：策略/持仓分页接口改走 `get_page_params` + `get_paginated_results` / `response_base.page` 标准写法，`page_size` 上限由 100 对齐全站 200；请求参数名（page/page_size）与分页响应结构不变；注意默认 page_size 由 20 变为标准默认 10——前端列表均显式传 page/page_size（`views/ai/analysis/`、`strategy-template.vue`），无感知
 - 策略 CRUD：`GET/POST /strategies`、`PUT/DELETE /strategies/{id}`，分页查询走统一分页结构；`execute_periods` 为 JSON 数组（`pre_market/morning/noon/tail/post_close`），`stock_pool` 为 `{codes: string[]}`（空则 AI 全市场自选）
 - 2026-08-17 新增策略分类：`category` 字符串（`pre_market_auction/noon/tail/blue_chip/general`，自建默认 `general`）+ `is_preset` bool（系统预置标记）；列表接口新增 `category` 过滤参数；迁移 0016 预置 10 条策略（默认停用，允许编辑/删除），蓝筹白马两类带固定股票池
 - 2026-08-18 执行异步化 + 信号由交易引擎执行：`POST /strategies/{id}/run` 改为异步提交（毫秒级返回 `{run_id, status: "running"}`，LLM 分析在后台任务中进行，同策略并发守卫错误码 11508）；执行记录 `GET /strategies/{id}/runs` 的 `status` 由 bool 改为字符串三态 `running/success/failed`，`opened_count/closed_count` 由交易引擎执行信号时累加（分析完成时为 0）；买卖信号落新表 `business_strategy_signal`（pending/executed/skipped/failed/expired），由每分钟任务 `strategy.trade_engine`（cron `* * * * * 9-15 * * mon-fri`）按新浪实时价执行模拟买卖 + 持仓跟踪（接管原 */5 `strategy.position_track`，已下线）；执行 user prompt 注入策略 `stop_loss_pct/take_profit_pct` 风控比例

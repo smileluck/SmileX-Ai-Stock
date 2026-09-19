@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import select, func, case, nulls_last
+from sqlalchemy import select, update, func, case, nulls_last
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exception.errors import CustomError
@@ -19,7 +19,7 @@ from database.models.business.strategy import (
     BusinessPositionTrackLog,
 )
 from database.utils.timezone import timezone
-from modules.strategy.services.quote_helper import fetch_latest_quotes
+from modules.strategy.services.quote_helper import fetch_latest_quotes, fetch_latest_prices
 from modules.strategy.schemas.strategy import (
     AttributionResult,
     EquityCurvePoint,
@@ -48,6 +48,47 @@ def limit_up_threshold(stock_code: str) -> float:
     return 9.0
 
 
+async def close_position_atomic(
+    db: AsyncSession,
+    pos: BusinessStrategyPosition,
+    *,
+    price: float,
+    now: datetime,
+    sell_reason: str,
+    return_rate: float | None,
+) -> bool:
+    """条件 UPDATE 原子平仓（holding→closed）：rowcount==1 表示认领成功。
+
+    并发执行者/手动平仓抢先时 rowcount==0，返回 False 由调用方跳过。
+    synchronize_session=False 不会同步内存对象，认领成功后手动同步字段，
+    保证依赖该对象的后续逻辑（如交易引擎 holding_map）看到一致状态。
+    """
+    values = {
+        "status": "closed",
+        "sell_price": price,
+        "sell_time": now,
+        "sell_reason": sell_reason,
+        "latest_price": price,
+        "return_rate": return_rate,
+        "floating_pnl_pct": return_rate,
+    }
+    result = await db.execute(
+        update(BusinessStrategyPosition)
+        .where(
+            BusinessStrategyPosition.id == pos.id,
+            BusinessStrategyPosition.status == "holding",
+            BusinessStrategyPosition.deleted_at.is_(None),
+        )
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+    if (result.rowcount or 0) != 1:
+        return False
+    for field, value in values.items():
+        setattr(pos, field, value)
+    return True
+
+
 class PositionService:
     """策略持仓服务类"""
 
@@ -65,7 +106,7 @@ class PositionService:
         prices: 调用方已批量拉取的实时价映射（交易引擎传入，避免重复拉取），
                 为 None 时自行拉取。
         changes: 实时涨跌幅映射（相对昨收%），用于「涨停暂缓平仓」判断；缺省时不启用。
-        返回：{tracked, closed, limit_protected, review_strategy_ids, failed, total}
+        返回：{tracked, closed, limit_protected, review_strategy_ids, total}
         review_strategy_ids：发生涨停保护、需要触发 AI 复核的策略 ID 集合
         """
         now = timezone.now()
@@ -92,15 +133,21 @@ class PositionService:
         for pos in positions:
             price = prices.get(pos.stock_code)
             if not price:
-                # 停牌/接口缺失时仍写一条日志便于排查
-                db.add(BusinessPositionTrackLog(
-                    position_id=pos.id, track_time=now,
-                    latest_price=pos.latest_price, pnl_pct=pos.floating_pnl_pct,
-                ))
+                # 停牌/接口缺失：按小时节流写排查日志（口径：距上次跟踪 ≥1 小时才写，
+                # 并顺手刷新 tracked_at 作为节流标记；防停牌持仓每分钟一条撑爆 track log）
+                last_tracked = pos.tracked_at
+                if last_tracked is None or (now - last_tracked) >= timedelta(hours=1):
+                    db.add(BusinessPositionTrackLog(
+                        position_id=pos.id, track_time=now,
+                        latest_price=pos.latest_price, pnl_pct=pos.floating_pnl_pct,
+                    ))
+                    pos.tracked_at = now
                 continue
 
             buy_price = float(pos.buy_price)
-            pnl_pct = round((price - buy_price) / buy_price * 100, 4)
+            # 除零守卫：buy_price 脏数据（<=0）时不计算浮盈，日志照常跟踪
+            pnl_pct = round((price - buy_price) / buy_price * 100, 4) if buy_price > 0 else None
+            prev_price = float(pos.latest_price) if pos.latest_price is not None else None
             pos.latest_price = price
             pos.floating_pnl_pct = pnl_pct
             pos.tracked_at = now
@@ -161,17 +208,27 @@ class PositionService:
                     continue
 
             if sell_reason:
-                pos.status = "closed"
-                pos.sell_price = price
-                pos.sell_time = now
-                pos.sell_reason = sell_reason
-                pos.return_rate = pnl_pct
-                closed += 1
+                # 条件 UPDATE 原子平仓：并发执行者/手动平仓抢先时 rowcount==0，
+                # 不重复计数、不覆盖他人的卖出信息
+                if await close_position_atomic(
+                    db, pos, price=price, now=now,
+                    sell_reason=sell_reason, return_rate=pnl_pct,
+                ):
+                    closed += 1
+                    db.add(BusinessPositionTrackLog(
+                        position_id=pos.id, track_time=now,
+                        latest_price=price, pnl_pct=pnl_pct,
+                    ))
+                else:
+                    logger.info("持仓已被并发平仓，跳过: position_id=%s", pos.id)
+                continue
 
-            db.add(BusinessPositionTrackLog(
-                position_id=pos.id, track_time=now,
-                latest_price=price, pnl_pct=pnl_pct,
-            ))
+            # 价格无变化且无状态变更（未平仓、未触发预警）时不写跟踪日志，防表膨胀
+            if prev_price != price:
+                db.add(BusinessPositionTrackLog(
+                    position_id=pos.id, track_time=now,
+                    latest_price=price, pnl_pct=pnl_pct,
+                ))
 
         await db.commit()
         logger.info(
@@ -301,23 +358,38 @@ class PositionService:
             )
         if is_t1_locked(pos.buy_time, now):
             raise CustomError(
-                error=CustomErrorCode.POSITION_ALREADY_CLOSED,
+                error=CustomErrorCode.POSITION_T1_LOCKED,
                 msg=f"持仓 [{pos.stock_name}] 当日买入（T+1 规则），最早下一交易日卖出",
             )
 
         sell_price = price
         if not sell_price:
             prices = await fetch_latest_prices([pos.stock_code])
-            sell_price = prices.get(pos.stock_code) or pos.latest_price or float(pos.buy_price)
+            sell_price = prices.get(pos.stock_code) or (
+                float(pos.latest_price) if pos.latest_price is not None else None
+            )
+        if not sell_price:
+            # 停牌且行情/缓存价均不可得时拒绝平仓，不再静默按买入价成交
+            raise CustomError(
+                error=CustomErrorCode.POSITION_PRICE_UNAVAILABLE,
+                msg=f"持仓 [{pos.stock_name}] 无法获取卖出价（可能停牌），请显式传入平仓价格",
+            )
 
         buy_price = float(pos.buy_price)
-        pos.status = "closed"
-        pos.sell_price = sell_price
-        pos.sell_time = now
-        pos.sell_reason = "manual"
-        pos.latest_price = sell_price
-        pos.return_rate = round((sell_price - buy_price) / buy_price * 100, 4)
-        pos.floating_pnl_pct = pos.return_rate
+        # 除零守卫：buy_price 脏数据（<=0）时不计算收益率
+        return_rate = (
+            round((sell_price - buy_price) / buy_price * 100, 4) if buy_price > 0 else None
+        )
+        # 条件 UPDATE 原子平仓：并发重复平仓时只有一个请求成功
+        closed = await close_position_atomic(
+            db, pos, price=sell_price, now=now,
+            sell_reason="manual", return_rate=return_rate,
+        )
+        if not closed:
+            raise CustomError(
+                error=CustomErrorCode.POSITION_ALREADY_CLOSED,
+                msg=f"持仓 [{pos.stock_name}] 已平仓",
+            )
         await db.commit()
         await db.refresh(pos)
         return PositionItem.model_validate(pos)

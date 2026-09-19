@@ -15,7 +15,10 @@ AI 分析策略表
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Integer, BigInteger, Numeric, Boolean, Text, DateTime, JSON, Index
+from sqlalchemy import (
+    String, Integer, BigInteger, Numeric, Boolean, Text, DateTime, JSON, Index,
+    UniqueConstraint, Computed,
+)
 from sqlalchemy.orm import mapped_column, Mapped
 
 from database.models.base import Base
@@ -98,6 +101,9 @@ class BusinessStrategyRun(Base):
 
     __table_args__ = (
         Index("ix_strategy_run_strategy", "strategy_id", "created_at"),
+        # 生成列模拟部分唯一索引：仅 running 记录占用 strategy_id 键位，
+        # MySQL 唯一索引允许多个 NULL，非 running 不受限（防并发重复 running）
+        UniqueConstraint("running_key", name="uq_strategy_run_running"),
         {"comment": "策略执行记录表"},
     )
 
@@ -135,6 +141,14 @@ class BusinessStrategyRun(Base):
     )
     error_msg: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, default=None, comment="错误信息"
+    )
+    running_key: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        Computed("CASE WHEN status='running' THEN strategy_id ELSE NULL END"),
+        nullable=True,
+        default=None,
+        comment="运行唯一键（生成列）：status=running 时为 strategy_id，否则 NULL，"
+                "配合 uq_strategy_run_running 保证同策略仅一条 running",
     )
 
 

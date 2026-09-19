@@ -19,6 +19,7 @@ import re
 from typing import Any, Optional
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.response.response_code import CustomErrorCode
@@ -116,18 +117,26 @@ def _extract_json_array(text: str) -> list[dict]:
 
 
 def _to_signal(raw: dict) -> Optional[SignalItem]:
-    """单条原始信号 → SignalItem，非法条目返回 None"""
+    """单条原始信号 → SignalItem，非法条目返回 None（单条容错，不拖垮整轮分析）"""
     code = str(raw.get("stock_code") or "").strip()
     action = str(raw.get("action") or "").strip().lower()
     if not re.fullmatch(r"\d{6}", code) or action not in ("buy", "sell", "adjust", "hold"):
+        return None
+    try:
+        buy_price = float(raw["buy_price"]) if raw.get("buy_price") not in (None, "", 0) else None
+        target_sell_price = float(raw["target_sell_price"]) if raw.get("target_sell_price") else None
+        stop_loss_price = float(raw["stop_loss_price"]) if raw.get("stop_loss_price") else None
+    except (TypeError, ValueError):
+        # LLM 偶发返回非数字价格字符串，跳过该条即可
+        logger.warning("信号价格字段非法，跳过该条: %s", raw)
         return None
     return SignalItem(
         stock_code=code,
         stock_name=str(raw.get("stock_name") or "").strip()[:50],
         action=action,
-        buy_price=float(raw["buy_price"]) if raw.get("buy_price") not in (None, "", 0) else None,
-        target_sell_price=float(raw["target_sell_price"]) if raw.get("target_sell_price") else None,
-        stop_loss_price=float(raw["stop_loss_price"]) if raw.get("stop_loss_price") else None,
+        buy_price=buy_price,
+        target_sell_price=target_sell_price,
+        stop_loss_price=stop_loss_price,
         reason=str(raw.get("reason") or "").strip()[:500] or None,
     )
 
@@ -299,7 +308,12 @@ class StrategyExecutor:
         """提交一次策略执行：创建 running 状态执行记录并立即返回 run_id，
         LLM 分析在后台 asyncio 任务中进行（独立 session，只传 id 不传 ORM 实例）。
 
-        同一策略并发守卫：已存在 running 记录时抛 STRATEGY_ALREADY_RUNNING。
+        注意：本方法会替调用方 session 执行 commit（落库 run 记录与
+        strategy.last_executed_at），调用方不应有未提交的其它 pending 变更。
+
+        同一策略并发守卫：SELECT 预检已有 running 记录时抛 STRATEGY_ALREADY_RUNNING；
+        预检与插入之间的 TOCTOU 窗口由 DB 唯一索引 uq_strategy_run_running
+        （生成列 running_key）兜底，IntegrityError 同样转为 STRATEGY_ALREADY_RUNNING。
         """
         dup = await db.execute(
             select(BusinessStrategyRun.id).where(
@@ -325,7 +339,15 @@ class StrategyExecutor:
         )
         db.add(run)
         strategy.last_executed_at = now
-        await db.commit()  # expire_on_commit=False，flush 后 run.id 可直接取用
+        try:
+            await db.commit()  # expire_on_commit=False，flush 后 run.id 可直接取用
+        except IntegrityError:
+            # 并发提交撞 uq_strategy_run_running 唯一索引：对方已抢先 running
+            await db.rollback()
+            raise CustomError(
+                error=CustomErrorCode.STRATEGY_ALREADY_RUNNING,
+                msg="该策略正在执行中，请稍后再试",
+            )
 
         task = asyncio.create_task(
             StrategyExecutor._execute_analysis(run.id, strategy.id, run_period)

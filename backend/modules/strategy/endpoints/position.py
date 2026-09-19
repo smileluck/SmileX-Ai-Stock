@@ -4,18 +4,22 @@
 """
 AI 分析策略持仓相关接口
 """
-import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_manager import get_session
-from core.response import ResponseModel, ResponsePageDataModel, response_base
+from core.response import (
+    ResponseModel,
+    ResponsePageDataModel,
+    ResponsePageModel,
+    response_base,
+)
 from modules.admin.deps.auth.user_manager import current_user
 from modules.admin.deps.auth.permission import require_permission
+from modules.common.schemas.page import PageRequest, get_page_params
 from modules.strategy.services.position_service import PositionService
-from modules.strategy.services.strategy_service import StrategyService
 from modules.strategy.schemas.strategy import (
     AttributionResult,
     EquityCurvePoint,
@@ -25,24 +29,15 @@ from modules.strategy.schemas.strategy import (
     StrategyStatsItem,
 )
 
-logger = logging.getLogger(__name__)
-
 position_router = APIRouter(prefix="/positions", tags=["AI助手/AI分析"])
 
 # 绩效深化统计（净值曲线 / 归因），独立于持仓 CRUD 子前缀
 stats_router = APIRouter(prefix="/stats", tags=["AI助手/AI分析"])
 
 
-def _page_data(records, page, page_size, total):
-    return ResponsePageDataModel(
-        records=records, page=page, page_size=page_size, total=total,
-        total_pages=(total + page_size - 1) // page_size if page_size else 0,
-    )
-
-
 @position_router.get(
     "",
-    response_model=ResponseModel[ResponsePageDataModel[PositionItem]],
+    response_model=ResponsePageModel[PositionItem],
     summary="分页获取持仓列表",
     dependencies=[Depends(require_permission("strategy:position:list"))],
 )
@@ -56,23 +51,31 @@ async def get_positions(
         None, description="排序列：buy_time/sell_time/pnl/return_rate；为空时默认持仓中在前+建仓时间倒序"
     ),
     sort_desc: bool = Query(False, description="是否倒序排序，配合 sort_by 使用"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_params: PageRequest = Depends(get_page_params),
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
+    """分页获取持仓列表，支持策略/状态/代码/建仓时间区间过滤与自定义排序"""
     items, total = await PositionService.get_positions(
         db, strategy_id, status, stock_code,
-        start_time, end_time, sort_by, sort_desc, page, page_size
+        start_time, end_time, sort_by, sort_desc,
+        page_params.page, page_params.page_size,
     )
-    return response_base.success(data=_page_data(items, page, page_size, total))
+    page_data = ResponsePageDataModel(
+        records=items,
+        page=page_params.page,
+        page_size=page_params.page_size,
+        total=total,
+        total_pages=(total + page_params.page_size - 1) // page_params.page_size,
+    )
+    return response_base.page(data=page_data)
 
 
 @position_router.post(
     "/track",
     response_model=ResponseModel[dict],
     summary="手动触发一次持仓跟踪",
-    dependencies=[Depends(require_permission("strategy:position:list"))],
+    dependencies=[Depends(require_permission("strategy:position:track"))],
 )
 async def track_positions(
     user=Depends(current_user),

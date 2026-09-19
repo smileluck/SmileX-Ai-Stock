@@ -4,18 +4,20 @@
 """
 AI 分析策略相关接口
 """
-import logging
-
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_manager import get_session
-from core.response import ResponseModel, ResponsePageDataModel, response_base
+from core.response import (
+    ResponseModel,
+    ResponsePageDataModel,
+    ResponsePageModel,
+    response_base,
+)
 from modules.admin.deps.auth.user_manager import current_user
 from modules.admin.deps.auth.permission import require_permission
+from modules.common.schemas.page import PageRequest, get_page_params, get_paginated_results
 from modules.strategy.services.strategy_service import StrategyService
-from modules.strategy.services.strategy_executor import StrategyExecutor
-from modules.strategy.services.position_service import PositionService
 from modules.strategy.schemas.strategy import (
     StrategyCreateRequest,
     StrategyExportData,
@@ -27,16 +29,7 @@ from modules.strategy.schemas.strategy import (
     TemplatePublishRequest,
 )
 
-logger = logging.getLogger(__name__)
-
 strategy_router = APIRouter(prefix="/strategies", tags=["AI助手/AI分析"])
-
-
-def _page_data(records, page, page_size, total):
-    return ResponsePageDataModel(
-        records=records, page=page, page_size=page_size, total=total,
-        total_pages=(total + page_size - 1) // page_size if page_size else 0,
-    )
 
 
 # ----------------------------------------------------------------------
@@ -44,7 +37,7 @@ def _page_data(records, page, page_size, total):
 # ----------------------------------------------------------------------
 @strategy_router.get(
     "",
-    response_model=ResponseModel[ResponsePageDataModel[StrategyItem]],
+    response_model=ResponsePageModel[StrategyItem],
     summary="分页获取策略列表",
     dependencies=[Depends(require_permission("strategy:manage"))],
 )
@@ -52,13 +45,14 @@ async def get_strategy_list(
     name: str | None = Query(None, description="策略名称模糊查询"),
     status: bool | None = Query(None, description="状态过滤"),
     category: str | None = Query(None, description="策略分类过滤：pre_market_auction/noon/tail/blue_chip/general"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_params: PageRequest = Depends(get_page_params),
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    items, total = await StrategyService.get_list(db, name, status, category, page, page_size)
-    return response_base.success(data=_page_data(items, page, page_size, total))
+    """分页获取策略列表（创建时间倒序），支持名称模糊/状态/分类过滤"""
+    query = StrategyService.build_list_query(name, status, category)
+    page_data = await get_paginated_results(db, page_params, query, StrategyItem)
+    return response_base.page(data=page_data)
 
 
 @strategy_router.post(
@@ -112,21 +106,29 @@ async def delete_strategy(
 # ----------------------------------------------------------------------
 @strategy_router.get(
     "/templates",
-    response_model=ResponseModel[ResponsePageDataModel[TemplateItem]],
+    response_model=ResponsePageModel[TemplateItem],
     summary="模板市场列表（已发布模板 + 系统预置策略，附克隆次数与最近回测摘要）",
     dependencies=[Depends(require_permission("strategy:manage"))],
 )
 async def get_template_list(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_params: PageRequest = Depends(get_page_params),
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
     """模板市场：is_template=True 或 is_preset=True 的策略，按创建时间倒序；
     每条附带 tags/source_id、克隆次数（存活克隆件计数）、最近一次 success 回测的
     绩效摘要（total_return_pct/max_drawdown_pct/win_rate/trade_count 与回测区间，无则 null）"""
-    items, total = await StrategyService.list_templates(db, page, page_size)
-    return response_base.success(data=_page_data(items, page, page_size, total))
+    items, total = await StrategyService.list_templates(
+        db, page_params.page, page_params.page_size
+    )
+    page_data = ResponsePageDataModel(
+        records=items,
+        page=page_params.page,
+        page_size=page_params.page_size,
+        total=total,
+        total_pages=(total + page_params.page_size - 1) // page_params.page_size,
+    )
+    return response_base.page(data=page_data)
 
 
 @strategy_router.post(
@@ -234,11 +236,9 @@ async def run_strategy(
     """手动执行策略：创建执行记录后立即返回，分析/评估在后台进行；
     prompt 型走 LLM 分析，rule 型走规则评估；
     产出的买卖信号由每分钟交易引擎按实时价执行模拟买卖"""
-    from modules.strategy.services.rule_executor import RuleExecutor
-
-    strategy = await StrategyService.get_by_id(db, strategy_id)
-    executor = RuleExecutor if strategy.strategy_type == "rule" else StrategyExecutor
-    run_id = await executor.submit_run(db, strategy, run_period="manual", trigger_type="manual")
+    run_id = await StrategyService.submit_run(
+        db, strategy_id, run_period="manual", trigger_type="manual"
+    )
     return response_base.success(
         data=StrategyRunSubmitResult(run_id=run_id),
         msg="已提交执行，分析完成后信号将由交易引擎执行",
@@ -247,34 +247,17 @@ async def run_strategy(
 
 @strategy_router.get(
     "/{strategy_id}/runs",
-    response_model=ResponseModel[ResponsePageDataModel[StrategyRunItem]],
+    response_model=ResponsePageModel[StrategyRunItem],
     summary="分页获取策略执行记录",
     dependencies=[Depends(require_permission("strategy:manage"))],
 )
 async def get_strategy_runs(
     strategy_id: int,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_params: PageRequest = Depends(get_page_params),
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    from sqlalchemy import select, func
-    from database.models.business.strategy import BusinessStrategyRun
-
-    conditions = [
-        BusinessStrategyRun.strategy_id == strategy_id,
-        BusinessStrategyRun.deleted_at.is_(None),
-    ]
-    count_result = await db.execute(
-        select(func.count()).select_from(BusinessStrategyRun).where(*conditions)
-    )
-    total = count_result.scalar() or 0
-    result = await db.execute(
-        select(BusinessStrategyRun)
-        .where(*conditions)
-        .order_by(BusinessStrategyRun.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
-    items = [StrategyRunItem.model_validate(row) for row in result.scalars().all()]
-    return response_base.success(data=_page_data(items, page, page_size, total))
+    """分页获取策略执行记录（创建时间倒序）"""
+    query = StrategyService.build_runs_query(strategy_id)
+    page_data = await get_paginated_results(db, page_params, query, StrategyRunItem)
+    return response_base.page(data=page_data)

@@ -462,6 +462,8 @@ strategy:
   import_invalid: "Invalid strategy import data"
   rule_config_invalid: "Invalid rule strategy config"
   rule_no_pool: "Rule strategy requires a non-empty stock pool"
+  position_t1_locked: "Positions bought today cannot be sold (T+1 rule)"
+  position_price_unavailable: "Latest quote unavailable, please specify the close price explicitly"
 
 backtest:
   not_found: "Backtest record not found"

@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-个股实时行情辅助层：基于新浪批量行情接口（复用 stock 模块 _sina）
+个股实时行情辅助层：基于新浪批量行情接口（经 stock 模块公开封装 fetch_sina_spot_quotes）
 供策略建仓定价与持仓跟踪刷新使用
 """
 import logging
 
-from modules.stock.services._sina import fetch_spot_quotes
+from modules.stock.services.market_fetcher import fetch_sina_spot_quotes
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ async def fetch_latest_quotes(codes: list[str]) -> dict[str, dict]:
         return {}
     sina_map = {_to_sina_code(c): c for c in codes}
     try:
-        quotes = await fetch_spot_quotes(list(sina_map.keys()))
+        quotes = await fetch_sina_spot_quotes(list(sina_map.keys()))
     except Exception as exc:  # noqa: BLE001
         logger.warning("批量获取实时行情失败: %s", exc)
         return {}

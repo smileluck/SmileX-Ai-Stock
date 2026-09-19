@@ -43,6 +43,21 @@ def _pick(df_row, *keys):
     return None
 
 
+async def fetch_sina_spot_quotes(sina_codes: list[str]) -> dict[str, dict]:
+    """公开封装：新浪批量实时行情（hq.sinajs.cn），供跨模块调用方使用。
+
+    私有数据源层 `_sina` 不允许跨模块直接导入（如下划线命名约定），
+    strategy 等模块的统一入口走这里。
+
+    Args:
+        sina_codes: 新浪格式代码列表，如 ["sh600519", "sz000001", "bj430047"]
+
+    Returns:
+        {sina_code: quote dict}，停牌/无数据代码缺席
+    """
+    return await fetch_spot_quotes(sina_codes)
+
+
 async def fetch_index_spot() -> list[dict]:
     """抓取主要指数实时行情，东财失败时逐级降级：新浪实时 → baostock 日线
 
