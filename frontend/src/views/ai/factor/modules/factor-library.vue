@@ -16,11 +16,14 @@ import {
 } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import { fetchCreateFactor, fetchDeleteFactor, fetchGetFactorList, fetchUpdateFactor } from '@/service/api';
+import { useAppStore } from '@/store/modules/app';
 import { $t } from '@/locales';
 import FactorOperateDrawer from './factor-operate-drawer.vue';
 import FactorImportModal from './factor-import-modal.vue';
 
 defineOptions({ name: 'FactorLibrary' });
+
+const appStore = useAppStore();
 
 const SOURCE_LABEL: Record<Api.Factor.FactorSource, string> = {
   preset: $t('page.aiFactor.sourcePreset'),
@@ -233,7 +236,12 @@ onMounted(loadList);
 </script>
 
 <template>
-  <NCard :bordered="false" size="small" class="card-wrapper sm:flex-1-hidden">
+  <NCard
+    :bordered="false"
+    size="small"
+    class="card-wrapper sm:h-full sm:flex-1-hidden"
+    content-style="min-height: 0"
+  >
     <template #header>
       <span>{{ $t('page.aiFactor.libraryTitle') }}</span>
     </template>
@@ -278,21 +286,25 @@ onMounted(loadList);
       </NSpace>
     </template>
 
-    <NDataTable
-      :columns="columns"
-      :data="factorList"
-      size="small"
-      :loading="listLoading"
-      :scroll-x="1100"
-      :row-key="(row: Api.Factor.FactorItem) => row.id"
-    />
-    <div class="mt-12px flex justify-end">
-      <NPagination
-        :page="listPage.page"
-        :page-size="listPage.pageSize"
-        :item-count="listTotal"
-        @update:page="onPageChange"
+    <div class="h-full flex-col-stretch">
+      <NDataTable
+        :columns="columns"
+        :data="factorList"
+        size="small"
+        :loading="listLoading"
+        :scroll-x="1100"
+        :flex-height="!appStore.isMobile"
+        class="flex-1-hidden"
+        :row-key="(row: Api.Factor.FactorItem) => row.id"
       />
+      <div class="mt-12px flex justify-end">
+        <NPagination
+          :page="listPage.page"
+          :page-size="listPage.pageSize"
+          :item-count="listTotal"
+          @update:page="onPageChange"
+        />
+      </div>
     </div>
 
     <FactorOperateDrawer v-model:visible="drawerVisible" :editing="editingFactor" @submitted="onDrawerSubmitted" />

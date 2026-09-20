@@ -166,8 +166,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-col-stretch gap-16px">
-    <NCard :title="$t('page.aiFactor.screen.formTitle')" :bordered="false" size="small" class="card-wrapper">
+  <div class="h-full flex-col-stretch gap-16px overflow-y-auto">
+    <NCard :title="$t('page.aiFactor.screen.formTitle')" :bordered="false" size="small" class="card-wrapper flex-shrink-0">
       <NSpace vertical :size="12">
         <!-- 股票池来源 -->
         <NSpace align="center" :size="12" class="flex-wrap">
@@ -212,7 +212,7 @@ onMounted(() => {
     </NCard>
 
     <!-- 选股结果 -->
-    <NCard v-if="screenResult" :bordered="false" size="small" class="card-wrapper sm:flex-1-hidden">
+    <NCard v-if="screenResult" :bordered="false" size="small" class="card-wrapper flex-shrink-0">
       <template #header>
         <NSpace align="center" :size="8">
           <span>{{ $t('page.aiFactor.screen.resultTitle') }}</span>

@@ -209,6 +209,7 @@ onMounted(async () => {
       :bordered="false"
       size="small"
       class="card-wrapper sm:flex-1-hidden"
+      content-style="min-height: 0"
     >
       <template #header-extra>
         <NButton size="small" :loading="loading" @click="getNewsData">

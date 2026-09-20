@@ -28,11 +28,14 @@ import {
   fetchRunBacktest
 } from '@/service/api';
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
+import { useAppStore } from '@/store/modules/app';
 import { $t } from '@/locales';
 import BacktestDetailDrawer from './modules/backtest-detail-drawer.vue';
 import SweepModal from './modules/sweep-modal.vue';
 
 defineOptions({ name: 'AiBacktest' });
+
+const appStore = useAppStore();
 
 // ================================================================
 // 发起回测表单
@@ -396,7 +399,12 @@ onMounted(() => {
     </NCard>
 
     <!-- 回测记录 -->
-    <NCard :bordered="false" size="small" class="card-wrapper sm:flex-1-hidden">
+    <NCard
+      :bordered="false"
+      size="small"
+      class="card-wrapper sm:flex-1-hidden"
+      content-style="min-height: 0"
+    >
       <template #header>
         <span>{{ $t('page.aiBacktest.listTitle') }}</span>
       </template>
@@ -424,26 +432,30 @@ onMounted(() => {
         </NSpace>
       </template>
 
-      <NDataTable
-        :columns="listColumns"
-        :data="backtestList"
-        size="small"
-        :loading="listLoading"
-        :scroll-x="1250"
-        :row-key="(row: Api.Backtest.BacktestItem) => row.id"
-      />
-      <div class="mt-12px flex items-center justify-between">
-        <NText depth="3" class="text-12px">
-          <icon-mdi-clock-outline class="text-14px" />
-          {{ $t('page.aiBacktest.lastRefresh') }}
-          {{ lastRefreshTime ? lastRefreshTime.format('HH:mm:ss') : '-' }}
-        </NText>
-        <NPagination
-          :page="listPage.page"
-          :page-size="listPage.pageSize"
-          :item-count="listTotal"
-          @update:page="onListPageChange"
+      <div class="h-full flex-col-stretch">
+        <NDataTable
+          :columns="listColumns"
+          :data="backtestList"
+          size="small"
+          :loading="listLoading"
+          :scroll-x="1250"
+          :flex-height="!appStore.isMobile"
+          class="flex-1-hidden"
+          :row-key="(row: Api.Backtest.BacktestItem) => row.id"
         />
+        <div class="mt-12px flex items-center justify-between">
+          <NText depth="3" class="text-12px">
+            <icon-mdi-clock-outline class="text-14px" />
+            {{ $t('page.aiBacktest.lastRefresh') }}
+            {{ lastRefreshTime ? lastRefreshTime.format('HH:mm:ss') : '-' }}
+          </NText>
+          <NPagination
+            :page="listPage.page"
+            :page-size="listPage.pageSize"
+            :item-count="listTotal"
+            @update:page="onListPageChange"
+          />
+        </div>
       </div>
     </NCard>
 

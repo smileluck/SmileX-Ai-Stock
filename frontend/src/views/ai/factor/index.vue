@@ -32,4 +32,9 @@ const activeTab = ref<'library' | 'calc' | 'screen'>('library');
   flex: 1;
   overflow: hidden;
 }
+
+/* 高度链：pane-wrapper(定高) -> tab-pane -> 模块根节点，库表格才能内部滚动 */
+.factor-tabs :deep(.n-tab-pane) {
+  height: 100%;
+}
 </style>

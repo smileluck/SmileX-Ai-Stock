@@ -124,8 +124,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-col-stretch gap-16px">
-    <NCard :title="$t('page.aiFactor.calc.formTitle')" :bordered="false" size="small" class="card-wrapper">
+  <div class="h-full flex-col-stretch gap-16px overflow-y-auto">
+    <NCard :title="$t('page.aiFactor.calc.formTitle')" :bordered="false" size="small" class="card-wrapper flex-shrink-0">
       <NForm label-placement="left" :label-width="80" :show-feedback="false">
         <NSpace align="center" :size="16" class="flex-wrap">
           <NFormItem :label="$t('page.aiFactor.calc.factor')" class="mb-0">
@@ -178,7 +178,7 @@ onMounted(() => {
       </NForm>
     </NCard>
 
-    <NCard v-if="calcResult" :bordered="false" size="small" class="card-wrapper sm:flex-1-hidden">
+    <NCard v-if="calcResult" :bordered="false" size="small" class="card-wrapper flex-shrink-0">
       <template #header>
         <NSpace align="center" :size="8">
           <span>{{ $t('page.aiFactor.calc.resultTitle') }}</span>

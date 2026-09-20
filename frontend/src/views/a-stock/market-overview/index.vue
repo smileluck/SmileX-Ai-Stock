@@ -13,7 +13,7 @@ const activeTab = ref('today');
 </script>
 
 <template>
-  <div class="h-full flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
+  <div class="flex-col-stretch gap-16px">
     <NTabs v-model:value="activeTab" type="line" animated>
       <NTabPane name="today" :tab="$t('page.aStock.marketOverview.todayMarket')">
         <TodayMarket v-if="activeTab === 'today'" />

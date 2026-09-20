@@ -982,7 +982,12 @@ onMounted(() => {
 
 <template>
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
-    <NCard :bordered="false" size="small" class="card-wrapper sm:flex-1-hidden">
+    <NCard
+      :bordered="false"
+      size="small"
+      class="card-wrapper sm:flex-1-hidden"
+      content-style="min-height: 0"
+    >
       <template #header>
         <NTabs v-model:value="activeTab" type="line" animated size="large">
           <NTabPane name="strategies" :tab="$t('page.aiStrategy.tabStrategies')" />
@@ -1091,21 +1096,25 @@ onMounted(() => {
       </template>
 
       <template v-if="activeTab === 'strategies'">
-        <NDataTable
-          :columns="strategyColumns"
-          :data="strategyList"
-          size="small"
-          :loading="strategyLoading"
-          :scroll-x="1350"
-          :row-key="(row: Api.Strategy.StrategyItem) => row.id"
-        />
-        <div class="mt-12px flex justify-end">
-          <NPagination
-            :page="strategyPage.page"
-            :page-size="strategyPage.pageSize"
-            :item-count="strategyTotal"
-            @update:page="onStrategyPageChange"
+        <div class="h-full flex-col-stretch">
+          <NDataTable
+            :columns="strategyColumns"
+            :data="strategyList"
+            size="small"
+            :loading="strategyLoading"
+            :scroll-x="1350"
+            :flex-height="!appStore.isMobile"
+            class="flex-1-hidden"
+            :row-key="(row: Api.Strategy.StrategyItem) => row.id"
           />
+          <div class="mt-12px flex justify-end">
+            <NPagination
+              :page="strategyPage.page"
+              :page-size="strategyPage.pageSize"
+              :item-count="strategyTotal"
+              @update:page="onStrategyPageChange"
+            />
+          </div>
         </div>
       </template>
 
