@@ -24,6 +24,11 @@ from modules.stock.services._common import num
 
 logger = logging.getLogger(__name__)
 
+# akshare 底层 requests 多数接口无超时：数据源挂住时 to_thread 永不返回，
+# 会把整个任务拖到 timeout 上限（2026-09-22 起宏观/研报/财报任务连续
+# 300s 超时即此因），单次调用超时后按失败跳过
+_AK_CALL_TIMEOUT = 30
+
 
 def _pick(row, *names) -> Optional[float]:
     """按候选列名取第一个非空数值（列名容错）"""
@@ -55,9 +60,11 @@ def _norm_period(val) -> Optional[str]:
 
 
 async def _fetch_df(func, **kwargs):
-    """akshare 同步接口转异步（线程池），异常时记 WARNING 返回 None"""
+    """akshare 同步接口转异步（线程池），异常/超时记 WARNING 返回 None"""
     try:
-        return await asyncio.to_thread(lambda: func(**kwargs))
+        return await asyncio.wait_for(
+            asyncio.to_thread(lambda: func(**kwargs)), timeout=_AK_CALL_TIMEOUT
+        )
     except Exception:  # noqa: BLE001
         logger.warning("宏观指标抓取失败: %s", getattr(func, "__name__", func), exc_info=True)
         return None

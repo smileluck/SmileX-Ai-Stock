@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 # 单次抓取保留的研报条数上限（东财接口返回全量历史，截取近期即可）
 MAX_REPORTS_PER_CODE = 60
 
+# akshare 底层 requests 无超时：源挂住时 to_thread 永不返回，会拖死整个
+# 同步任务，单次调用超时后按失败跳过该个股
+_AK_CALL_TIMEOUT = 30
+
 
 def _norm_code(stock_code: str) -> str:
     """归一化为 6 位代码（容忍 000001.SZ / sz000001 等格式）"""
@@ -53,8 +57,9 @@ async def fetch_research_reports(stock_code: str) -> list[dict]:
     if not code:
         return []
     try:
-        df = await asyncio.to_thread(
-            lambda: ak.stock_research_report_em(symbol=code)
+        df = await asyncio.wait_for(
+            asyncio.to_thread(lambda: ak.stock_research_report_em(symbol=code)),
+            timeout=_AK_CALL_TIMEOUT,
         )
     except Exception:  # noqa: BLE001
         logger.warning("个股研报抓取失败: %s", code, exc_info=True)

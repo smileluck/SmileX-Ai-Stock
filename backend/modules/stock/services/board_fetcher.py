@@ -6,6 +6,7 @@
 数据源降级链：
 - 行业：akshare-东财（主源，含换手率/涨跌家数）→ 腾讯板块排行（兜底，含换手率/成交额/净流入/涨跌家数）→ 同花顺（末级兜底，无换手率）
 - 概念：akshare-东财（主源）→ 腾讯板块排行（兜底，同花顺无概念行情列表）
+- 板块成分股：东财 push2（主源，含近5/10日涨跌幅）→ 同花顺详情页（兜底，按板块名解析 88/30 代码，无近5/10日涨跌幅）
 - 东财 push2 接口对高频请求有 IP 级封禁，异常/限流时自动降级
 - 腾讯板块排行（getRank）字段完整但分类体系为申万行业（hy2=申万二级）/腾讯概念，
   与东财板块代码体系不同，跨源快照不可混用对比
@@ -13,6 +14,7 @@
 import asyncio
 import io
 import logging
+import time
 
 import httpx
 
@@ -32,14 +34,22 @@ _EM_CLIST_HOSTS = (
     "push2.eastmoney.com",       # 实时行情（主）
     "push2delay.eastmoney.com",  # 延时行情（实时源 IP 限流时降级，收盘后同步数据无差异）
 )
-# 板块内个股涨幅榜并发上限与单请求间隔：push2 对高频请求有 IP 级封禁，概念板块量大需限速
-_EM_TOP_STOCKS_CONCURRENCY = 5
-_EM_TOP_STOCKS_INTERVAL = 0.1
+# 板块内个股并发上限与单请求间隔：push2 对高频请求有 IP 级封禁（2026-09-23 起实测
+# 连续多日整段封禁，诱因疑似每日批量成分股抓取+行情轮询的累计请求密度），取保守值
+_EM_TOP_STOCKS_CONCURRENCY = 3
+_EM_TOP_STOCKS_INTERVAL = 0.3
 _THS_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36"
 )
 _THS_RANK_URL = "http://q.10jqka.com.cn/thshy/index/field/199112/order/desc/page/{page}/ajax/1/"
+# 同花顺板块成分股详情页（ajax 片段）：不能带 field 段否则 403，须逐请求刷新 v cookie
+_THS_CONS_URL = "http://q.10jqka.com.cn/{kind}/detail/order/desc/page/{page}/ajax/1/code/{code}/"
+# 同花顺连续快速请求会 302 跳登录（软限流，实测 0.25s 间隔约 6 页触发），必须压低速率
+_THS_CONS_PAGE_INTERVAL = 0.5
+_THS_CONCURRENCY = 2
+# akshare 同步接口无超时（源挂住会拖死任务），单次调用统一超时兜底
+_AK_CALL_TIMEOUT = 30
 
 
 def _pick(row, *keys):
@@ -539,6 +549,158 @@ def _resolve_em_board_code(board: dict, name_map: dict[str, str]) -> str:
     )
 
 
+def _parse_cn_amount(val) -> float | None:
+    """中文单位金额转元：'3.45亿' → 3.45e8，'3456万' → 3.456e7，'--'/空 → None"""
+    if val is None:
+        return None
+    s = str(val).strip()
+    unit = 1.0
+    if s.endswith("亿"):
+        unit, s = 1e8, s[:-1]
+    elif s.endswith("万"):
+        unit, s = 1e4, s[:-1]
+    n = num(s)
+    return n * unit if n is not None else None
+
+
+class THSRateLimitedError(RuntimeError):
+    """同花顺软限流（302 跳登录/403）
+
+    实测按请求数限（约 5-6 页/时间窗，与间隔快慢无关）：批量兜底时捕获到
+    该错误应立即熔断同花顺，当天能兜几块兜几块，避免反复触发加重惩罚。
+    """
+
+
+async def _fetch_ths_board_code_map(board_type: str) -> dict[str, str]:
+    """同花顺板块名 -> 88/30 代码映射（行业 881xxx / 概念 30xxxx，含归一化名键）"""
+    import akshare as ak
+
+    fn = (
+        ak.stock_board_industry_name_ths
+        if board_type == "industry"
+        else ak.stock_board_concept_name_ths
+    )
+    df = await asyncio.wait_for(asyncio.to_thread(fn), timeout=_AK_CALL_TIMEOUT)
+    name_map: dict[str, str] = {}
+    for _, row in df.iterrows():
+        name = str(row.get("name", "")).strip()
+        code = str(row.get("code", "")).strip()
+        if not name or not code:
+            continue
+        name_map[name] = code
+        norm = _norm_board_name(name)
+        name_map.setdefault(norm, code)
+        stripped = _strip_board_name_suffix(norm)
+        if stripped != norm:
+            name_map.setdefault(stripped, code)
+    return name_map
+
+
+async def _fetch_ths_board_code_map_safe(board_type: str) -> dict[str, str]:
+    """同花顺板块名映射抓取（失败记 WARNING 返回空映射，不阻断调用方）"""
+    try:
+        return await _fetch_ths_board_code_map(board_type)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("同花顺板块名映射抓取失败(%s): %s", board_type, e)
+        return {}
+
+
+def _fetch_ths_constituents_sync(board_type: str, code: str) -> list[dict]:
+    """同花顺板块成分股全量分页抓取（同步，供 to_thread 调用）
+
+    页面 20 行/页，page_info 形如 '2/10'；无近5/10日涨跌幅列，
+    gain_5d/gain_10d 置 None 由查询侧按成分股日快照自累计兜底。
+    """
+    import pandas as pd
+    from bs4 import BeautifulSoup
+
+    kind = "thshy" if board_type == "industry" else "gn"
+
+    def _get(page: int) -> str:
+        v = _ths_v_code()
+        resp = httpx.get(
+            _THS_CONS_URL.format(kind=kind, page=page, code=code),
+            headers={"User-Agent": _THS_UA, "Cookie": f"v={v}"},
+            timeout=15,
+            follow_redirects=True,
+        )
+        resp.encoding = "gbk"
+        # 软限流表现为 302 跳 /account/login/（follow_redirects 后 200）或直接 403
+        if "account/login" in str(resp.url) or resp.status_code == 403:
+            raise THSRateLimitedError("同花顺限流（跳登录/403），请降低请求速率")
+        resp.raise_for_status()
+        return resp.text
+
+    items: list[dict] = []
+    page, total_pages = 1, 1
+    while page <= total_pages:
+        html = _get(page)
+        if page == 1:
+            soup = BeautifulSoup(html, features="lxml")
+            page_info = soup.find(name="span", attrs={"class": "page_info"})
+            if page_info and "/" in page_info.text:
+                total_pages = int(page_info.text.split("/")[1])
+        df = pd.read_html(io.StringIO(html), converters={"代码": str})[0]
+        for _, row in df.iterrows():
+            stock_code = normalize_code(str(row.get("代码", "")))
+            stock_name = str(row.get("名称", "")).strip()
+            if not stock_code or not stock_name:
+                continue
+            items.append({
+                "stock_code": stock_code,
+                "stock_name": stock_name,
+                "price": num(row.get("现价")),
+                "change_pct": num(row.get("涨跌幅(%)")),
+                "amount": _parse_cn_amount(row.get("成交额")),
+                "turnover_rate": num(row.get("换手(%)")),
+                "gain_5d": None,
+                "gain_10d": None,
+            })
+        page += 1
+        if page <= total_pages:
+            time.sleep(_THS_CONS_PAGE_INTERVAL)
+    return items
+
+
+async def _fallback_ths_constituents(
+    board_type: str, board_name, ths_maps: dict[str, dict[str, str]],
+    sem: asyncio.Semaphore,
+) -> list[dict] | None:
+    """东财失败时的同花顺成分股兜底（按板块名解析 88/30 代码）
+
+    映射缺失时懒抓一次（同一批次共享缓存）；独立信号量限速
+    （同花顺软限流比东财更敏感）。返回 None 表示名称不可解析
+    （确定性失败，不计入限流熔断），[] 表示抓取失败，非空为成功。
+    """
+    name = str(board_name or "").strip()
+    if not name:
+        return None
+    if board_type not in ths_maps:
+        ths_maps[board_type] = await _fetch_ths_board_code_map_safe(board_type)
+    ths_map = ths_maps[board_type]
+    if not ths_map:
+        return None
+    norm = _norm_board_name(name)
+    code = (
+        ths_map.get(name) or ths_map.get(norm)
+        or ths_map.get(_strip_board_name_suffix(norm)) or ""
+    )
+    if not code:
+        return None
+    async with sem:
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_fetch_ths_constituents_sync, board_type, code),
+                timeout=180,
+            )
+        except THSRateLimitedError:
+            # 软限流是批次级信号：向上抛出由调用方立即熔断同花顺
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.warning("同花顺成分股兜底失败(%s %s): %s", code, name, e)
+            return []
+
+
 async def _fetch_board_kline_paged(
     client: httpx.AsyncClient, board_code: str, days: int
 ) -> list[dict]:
@@ -646,33 +808,86 @@ async def fetch_board_constituents(board_type: str, board_code: str) -> list[dic
 async def fetch_boards_constituents_batch(
     boards: list[dict],
 ) -> list[tuple[dict, list[dict]]]:
-    """批量抓取多板块全部成分股（共享连接与域名探测，单板块失败不影响整体）
+    """批量抓取多板块全部成分股（东财主源 → 同花顺兜底，单板块失败不影响整体）
 
     boards 为 [{board_type, board_code, board_name, ...}]，返回与入参顺序一致的
     [(board, stocks)]，失败板块的 stocks 为空列表。
     board_code 非 BK 前缀（腾讯兜底源 pt0xxxxx 等）时按板块名解析东财代码。
+    东财 push2 被 IP 封禁时（名映射/成分股分页拉取连续失败）自动整批切同花顺：
+    连续 3 个板块东财失败即熔断，后续板块直接走同花顺，避免逐板块空耗重试时间。
     """
     sem = asyncio.Semaphore(_EM_TOP_STOCKS_CONCURRENCY)
+    ths_sem = asyncio.Semaphore(_THS_CONCURRENCY)
+    board_types = {str(b.get("board_type") or "industry") for b in boards}
+    state = {"em_fail_streak": 0, "em_down": False, "ths_fail_streak": 0, "ths_down": False}
 
     async with httpx.AsyncClient(timeout=10, headers=_QQ_HEADERS) as client:
-        name_maps = {
-            bt: await _fetch_em_board_code_map(client, bt)
-            for bt in {str(b.get("board_type") or "industry") for b in boards}
-        }
+        name_maps: dict[str, dict[str, str]] = {}
+        for bt in board_types:
+            try:
+                name_maps[bt] = await _fetch_em_board_code_map(client, bt)
+            except Exception as e:  # noqa: BLE001
+                # push2 整体封禁时映射拿不到：不阻断批量流程，该类型直接走同花顺
+                logger.warning("东财板块名映射抓取失败(%s)，该类型成分股将降级同花顺: %s", bt, e)
+                name_maps[bt] = {}
+
+        ths_maps: dict[str, dict[str, str]] = {}
+        # 名映射拿不到的类型必然走同花顺，预抓 88/30 代码映射（行业/概念各一次）
+        for bt in board_types:
+            if not name_maps[bt]:
+                ths_maps[bt] = await _fetch_ths_board_code_map_safe(bt)
 
         async def _one(board: dict) -> list[dict]:
+            bt = str(board.get("board_type") or "industry")
             async with sem:
                 try:
-                    em_code = _resolve_em_board_code(
-                        board, name_maps.get(str(board.get("board_type") or "industry"), {}),
-                    )
+                    if state["em_down"]:
+                        raise RuntimeError("东财熔断中（连续失败）")
+                    em_code = _resolve_em_board_code(board, name_maps.get(bt, {}))
                     if not em_code:
                         raise RuntimeError("按板块名未匹配到东财板块代码")
-                    return await _fetch_board_constituents_paged(client, em_code)
+                    stocks = await _fetch_board_constituents_paged(client, em_code)
+                    state["em_fail_streak"] = 0
+                    return stocks
                 except Exception as e:  # noqa: BLE001
+                    state["em_fail_streak"] += 1
+                    if state["em_fail_streak"] >= 3:
+                        state["em_down"] = True
+                    if state["ths_down"]:
+                        logger.warning(
+                            "板块成分股抓取失败(%s %s)，东财与同花顺均熔断: %s",
+                            board.get("board_code"), board.get("board_name"), e,
+                        )
+                        return []
+                    stocks = None
+                    try:
+                        stocks = await _fallback_ths_constituents(
+                            bt, board.get("board_name"), ths_maps, ths_sem,
+                        )
+                    except THSRateLimitedError as te:
+                        state["ths_down"] = True
+                        logger.warning("同花顺软限流，本批次余下板块熔断同花顺: %s", te)
+                    if stocks:
+                        state["ths_fail_streak"] = 0
+                        logger.info(
+                            "板块成分股改用同花顺源(%s %s)，东财失败: %s",
+                            board.get("board_code"), board.get("board_name"), e,
+                        )
+                        return stocks
+                    if stocks is None:
+                        # 名称不可解析：同花顺侧确定性失败，不计入限流熔断
+                        logger.warning(
+                            "板块成分股按名未匹配到同花顺代码(%s %s)",
+                            board.get("board_code"), board.get("board_name"),
+                        )
+                        return []
+                    state["ths_fail_streak"] += 1
+                    if state["ths_fail_streak"] >= 3:
+                        state["ths_down"] = True
+                        logger.warning("同花顺成分股兜底连续失败，本批次余下板块熔断同花顺")
                     logger.warning(
                         "板块成分股抓取失败(%s %s): %s",
-                        board["board_code"], board["board_name"], e,
+                        board.get("board_code"), board.get("board_name"), e,
                     )
                     return []
                 finally:

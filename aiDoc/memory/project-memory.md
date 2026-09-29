@@ -9,12 +9,14 @@
 
 ## 经验记忆
 
+- [2026-09-24 akshare 无超时挂死任务 + 东财 push2 IP 封禁排查](./lessons/2026-09-24-akshare-no-timeout-task-hang.md) — to_thread 必包 wait_for(30s)；push2 全域名 Empty reply=IP 级封禁（curl_cffi 也拒）；Clash TUN 下用 mihomo controller 查真实 DNS/分流；成分股兜底源选型实测（THS 按请求数限流/新浪分类不匹配/腾讯无此接口）
 - [2026-09-19 MySQL 并发唯一约束与多 worker 调度器选主](./lessons/2026-09-19-mysql-partial-unique-scheduler-leader.md) — 生成列模拟部分唯一索引；max_instances 按 job id 生效；多 worker lifespan 需 GET_LOCK 选主 + follower 写传播；非确定性判定不缓存
 
 ## 业务需求记忆
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-09-24 轮动成分股同步：东财降密度 + 同花顺兜底 + 双熔断](./business/2026-09-24_rotation_constituents_fallback_and_density.md) — 并发 5→3/间隔 0.1→0.3s；THS 详情页兜底（v cookie+GBK+按名解析 88/30 代码）；EM 连续 3 失败熔断、THS 限流（302 跳登录，~5-6 请求/窗）即时熔断；任务超时 900s；封禁期快照部分覆盖
 - [2026-09-19 策略执行链路并发与健壮性修复](./business/2026-09-19_strategy_execution_hardening.md) — 信号/持仓条件 UPDATE + running_key 生成列唯一索引（迁移0039）；调度器 GET_LOCK 选主 + 手动触发串行化 + leader 周期 resync；交易日历/行情降级告警/批处理容错；分页与分层规范对齐、track 写权限拆分；新错误码 11512/11513
 
 - [2026-09-14 热门个股记录炸板股（涨停后破板）](./business/2026-09-14_limit_up_broken_pool.md) — 涨停池表加 `pool_type` 判别列（迁移 0032）+ 东财炸板池 `stock_zt_pool_zbgc_em` 双池同抓；`/list` 加 pool_type 筛选、stats 加 broken_count（涨停口径不变仅封板股）；前端加池类型筛选/状态列/炸板家数
