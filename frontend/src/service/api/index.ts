@@ -16,6 +16,7 @@ export * from './stock-rotation';
 export * from './block-trade';
 export * from './strategy';
 export * from './analysis';
+export * from './recommend';
 export * from './macro';
 export * from './financial';
 export * from './research';

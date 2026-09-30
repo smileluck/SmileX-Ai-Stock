@@ -207,6 +207,10 @@ class BusinessStrategySignal(Base):
     result_msg: Mapped[Optional[str]] = mapped_column(
         String(500), nullable=True, default=None, comment="执行结果说明（跳过/失败原因）"
     )
+    entry_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="market", server_default="market",
+        comment="建仓方式：market-按实时价直接成交，limit-触及参考买点（实时价<=ref_buy_price）才成交",
+    )
 
 
 class BusinessStrategyPosition(Base):

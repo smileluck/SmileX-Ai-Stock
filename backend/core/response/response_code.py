@@ -176,6 +176,9 @@ class CustomErrorCode(CustomCodeBase):
     FACTOR_IMPORT_FAILED = (11803, "error.factor.import_failed")
     FACTOR_CODE_CONFLICT = (11804, "error.factor.code_conflict")
     FACTOR_PRESET_DELETE_FORBIDDEN = (11805, "error.factor.preset_delete_forbidden")
+    # AI 推荐股票 11901-11920
+    RECOMMEND_ALREADY_RUNNING = (11901, "error.recommend.already_running")
+    RECOMMEND_RUN_NOT_FOUND = (11902, "error.recommend.run_not_found")
 
 @dataclass
 class CustomResponse:

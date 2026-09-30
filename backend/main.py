@@ -24,6 +24,7 @@ from modules.strategy.router import router as strategy_router
 from modules.backtest.router import router as backtest_router
 from modules.factor.router import router as factor_router
 from modules.analysis.router import router as analysis_router
+from modules.recommend.router import router as recommend_router
 from modules.macro.router import router as macro_router
 from modules.financial.router import router as financial_router
 from modules.research.router import router as research_router
@@ -77,6 +78,7 @@ async def lifespan(app: FastAPI):
     import modules.scheduler.tasks.stock_block_trade_sync  # noqa: F401
     import modules.scheduler.tasks.strategy_run  # noqa: F401
     import modules.scheduler.tasks.analysis_run  # noqa: F401
+    import modules.scheduler.tasks.recommend_run  # noqa: F401
     import modules.scheduler.tasks.macro_sync  # noqa: F401
     import modules.scheduler.tasks.financial_run  # noqa: F401
     import modules.scheduler.tasks.research_sync  # noqa: F401
@@ -171,12 +173,15 @@ app.include_router(backtest_router)
 app.include_router(factor_router)
 # AI 大盘/板块分析模块（异步生成 + 历史回看 + 收盘后定时生成）
 app.include_router(analysis_router)
+# AI 推荐股票模块（六维度候选 + LLM 生成 10 只推荐股 + 信号落库自动建仓）
+app.include_router(recommend_router)
 # AI 宏观指数模块（中美 CPI/PPI/M1/M2 等 + 注入 AI 分析）
 app.include_router(macro_router)
 # AI 财报解读模块（财报抓取 + 解读预测）
 app.include_router(financial_router)
 # AI 研报中心模块（券商研报采集 + 概览统计 + 供策略分析）
 app.include_router(research_router)
+# 数据源管理模块（出站限流/熔断配置 + 用量统计 + FQGate 网关管理）
 # 示例模块（akshare / Baostock SDK 简单调用演示）
 app.include_router(demo_router)
 # 开放API（商户 HMAC 签名鉴权）

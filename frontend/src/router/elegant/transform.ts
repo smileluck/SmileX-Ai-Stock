@@ -186,6 +186,7 @@ const routeMap: RouteMap = {
   "ai_research-report": "/ai/research-report",
   "ai_rotation-analysis": "/ai/rotation-analysis",
   "ai_sector-analysis": "/ai/sector-analysis",
+  "ai_stock-recommend": "/ai/stock-recommend",
   "business": "/business",
   "business_app-user": "/business/app-user",
   "demo": "/demo",

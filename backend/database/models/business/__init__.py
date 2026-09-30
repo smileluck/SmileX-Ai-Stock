@@ -30,6 +30,8 @@ from .financial import (
 
 from .research import BusinessResearchReport
 
+from .recommend import BusinessRecommendRun, BusinessRecommendStock
+
 __all__ = [
     "AppUser",
     "BusinessNews",
@@ -48,4 +50,6 @@ __all__ = [
     "BusinessFinancialReport",
     "BusinessFinancialInterpretation",
     "BusinessResearchReport",
+    "BusinessRecommendRun",
+    "BusinessRecommendStock",
 ]

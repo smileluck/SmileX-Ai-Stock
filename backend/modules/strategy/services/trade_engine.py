@@ -323,11 +323,19 @@ class TradeEngine:
                     continue
                 if not price:
                     continue
+                # 限价买入（entry_type=limit，如 AI 推荐抄底买点）：买点本意低于现价，
+                # 仅当实时价回落触及买点（price <= ref）才成交；未触及则保持 pending
+                # 等下一 tick（收盘后 15:05 过期机制兜底），且跳过下方偏差守卫。
+                if sig.entry_type == "limit" and sig.ref_buy_price:
+                    ref = float(sig.ref_buy_price)
+                    if ref > 0 and price > ref:
+                        continue
                 # 参考价偏差守卫：实时价偏离 AI 参考价超阈值时拒单
                 # （说明 AI 分析时看到的价格已严重过期，止损/目标位均不可信）。
                 # 口径差异：rule 策略参考价锚定 D-1 收盘价（rule_executor），
-                # 高开/低开超阈值是正常行情而非 LLM 价格失真，故 rule 策略跳过该守卫。
-                if sig.ref_buy_price and strategy.strategy_type != "rule":
+                # 高开/低开超阈值是正常行情而非 LLM 价格失真，故 rule 策略跳过该守卫；
+                # limit 建仓方式同样跳过（买点低于现价属预期偏差）。
+                elif sig.ref_buy_price and strategy.strategy_type != "rule":
                     ref = float(sig.ref_buy_price)
                     if ref > 0:
                         deviation_pct = abs(price - ref) / ref * 100

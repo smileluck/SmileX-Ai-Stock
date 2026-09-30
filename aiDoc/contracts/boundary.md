@@ -1,4 +1,4 @@
-<!-- last-updated: 2026-09-16 -->
+<!-- last-updated: 2026-09-29 -->
 # 前后端边界与数据契约
 
 ## 责任边界
@@ -500,3 +500,17 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 已知现象（非 bug）：prompt 型网格可能出现相邻参数组绩效并列——AI 信号自带 stop_loss_price/target_sell_price 时，策略止损/止盈参数仅在信号价格位无效（方向错误/缺失）时兜底，未触发的参数组结果自然一致
 - 前端：回测页「参数寻优」弹窗 `views/ai/backtest/modules/sweep-modal.vue`（自载策略/因子列表）——网格候选值逗号分隔实时算组合数（>27 红字禁提交）、rule 型显买入条件扫描区、结果表最优行高亮 + baseline 行「当前参数」tag、「应用该组参数」Popconfirm 后经 `PUT /admin/strategy/strategies/{id}` 整体写回（rule 含条件行 value，baseline 行禁用）；api `fetchRunBacktestSweep`，typings `Api.Backtest.{BacktestSweepParams,SweepResultItem,BacktestSweepResult,...}`，i18n `page.aiBacktest.sweep.*`
 - 调优数据基线见记忆 `business/2026-09-16_strategy_backtest_baseline.md`（10 策略绩效矩阵，回测记录保留在库）
+
+---
+
+## AI 推荐板块契约（2026-09-29，迁移 0040/0041）
+
+- 前缀 `/admin/recommend`；权限码：`recommend:run`（生成）、`recommend:list`（查询）；错误码 11901（并发/当日已有 running）/11902（记录不存在）
+- 接口：`POST /run`（异步提交，返回 `{id, status, run_date}`，同日 running 去重）、`GET /latest`（最新 run 详情，无记录 data 为 null，response_model 用 `ResponseModel[X | None]`）、`GET /runs?page&page_size`（统一分页，列表项不含 stocks）、`GET /runs/{id}`（详情含 stocks）
+- `RecommendRun`：`status` 字符串三态 `running/success/failed`；`run_date` 为 `YYYY-MM-DD`；`ai_raw_response` 为 markdown 综合研判（开头可能带 ```json 摘要块，前端渲染前由 `renderAnalysisMarkdown` 剥离）；`parsed_result`/`candidate_snapshot` 为 JSON；`strategy_id` 指向专用策略「AI每日推荐」（用于回测/持仓联动），失败时可为 null
+- `RecommendStock`（每次 10 条）：`rank` 1-10、`direction: limit_up|bottom_fish`（涨停候选/抄底）、`score` 0-100、`buy_price`（预判买点）/`target_price`/`stop_loss_price`、`entry_type: market|limit`（bottom_fish→limit）、`reasons` 六维度 JSON `{news?, sentiment?, factor?, sector_fund?, main_force?, limit_up?}`（各维度一句话依据，无命中维度缺 key）、`summary`（AI 理由）、`signal_id`（关联 `business_strategy_signal`）
+- 信号桥接：每次推荐落固定策略「AI每日推荐」（prompt 型，stock_pool=10 只）+ `BusinessStrategyRun`（直接落 success 终态）+ 每股一条 pending 买入信号（`ref_buy_price`=预判买点）；`business_strategy_signal` 新增 `entry_type`（默认 market）——交易引擎对 `limit` 信号仅当实时价 ≤ ref_buy_price 才成交（保持 pending，沿用次日 15:05 过期），并跳过 prompt 型 3% 参考价偏差守卫
+- 回测/持仓接入：推荐策略走现有 recorded_replay 回测与持仓追踪，无接口变更；前端「回测」跳 `ai_backtest?strategy_id=`、「持仓」跳 `ai_analysis?tab=positions&strategy_id=`，两目标页消费 query 预填筛选（首例页面间 query 传参模式）
+- 调度任务 `recommend.daily_run`（cron `45 16 * * mon-fri`，收盘各同步任务之后，同日 success/running 去重）
+- 菜单迁移 0041：MENU id 2942406616008035（name `ai_stock-recommend`，parent 8001，sort 11）+ BUTTON `recommend:list`（036）/`recommend:run`（037）
+- 前端 API：`frontend/src/service/api/recommend.ts`，类型 `Api.Recommend.*`（`frontend/src/typings/api/recommend.d.ts`）；页面 `views/ai/stock-recommend/index.vue`；i18n `page.aiRecommend.*`

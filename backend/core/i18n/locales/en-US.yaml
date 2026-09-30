@@ -476,3 +476,7 @@ factor:
   import_failed: "Factor import failed"
   code_conflict: "Factor code already exists"
   preset_delete_forbidden: "Preset factors cannot be deleted, only disabled"
+
+recommend:
+  already_running: "Today's recommendations are being generated, please try again later"
+  run_not_found: "Recommend run not found or deleted"

@@ -1,5 +1,6 @@
 <script setup lang="tsx">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import {
   NButton,
   NCard,
@@ -54,6 +55,7 @@ import StrategyTemplate from './modules/strategy-template.vue';
 defineOptions({ name: 'AiAnalysis' });
 
 const appStore = useAppStore();
+const route = useRoute();
 
 const activeTab = ref<'strategies' | 'positions' | 'stats' | 'templates'>('strategies');
 
@@ -975,6 +977,14 @@ watch(activeTab, tab => {
 });
 
 onMounted(() => {
+  // 推荐板块等页面跳转：tab=positions 初始切到持仓跟踪，strategy_id 预填持仓筛选
+  // （activeTab 变化触发上方 watch 自动加载持仓列表，此时筛选已就位）
+  if (route.query.tab === 'positions') {
+    const rawStrategyId = route.query.strategy_id;
+    const queryStrategyId = typeof rawStrategyId === 'string' ? Number(rawStrategyId) : Number.NaN;
+    if (!Number.isNaN(queryStrategyId)) positionSearch.strategy_id = queryStrategyId;
+    activeTab.value = 'positions';
+  }
   loadStrategies();
   loadStrategyFilterOptions();
 });

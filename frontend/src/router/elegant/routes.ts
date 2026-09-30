@@ -223,6 +223,15 @@ export const generatedRoutes: GeneratedRoute[] = [
           title: 'ai_sector-analysis',
           i18nKey: 'route.ai_sector-analysis'
         }
+      },
+      {
+        name: 'ai_stock-recommend',
+        path: '/ai/stock-recommend',
+        component: 'view.ai_stock-recommend',
+        meta: {
+          title: 'ai_stock-recommend',
+          i18nKey: 'route.ai_stock-recommend'
+        }
       }
     ]
   },

@@ -483,3 +483,7 @@ factor:
   import_failed: "因子导入失败"
   code_conflict: "因子代码已存在"
   preset_delete_forbidden: "预置因子不可删除，只能停用"
+
+recommend:
+  already_running: "今日推荐正在生成中，请稍后再试"
+  run_not_found: "推荐记录不存在或已删除"

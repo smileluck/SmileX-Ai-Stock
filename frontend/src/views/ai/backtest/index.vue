@@ -1,5 +1,6 @@
 <script setup lang="tsx">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import {
   NButton,
   NCard,
@@ -36,6 +37,7 @@ import SweepModal from './modules/sweep-modal.vue';
 defineOptions({ name: 'AiBacktest' });
 
 const appStore = useAppStore();
+const route = useRoute();
 
 // ================================================================
 // 发起回测表单
@@ -322,6 +324,13 @@ const listColumns = computed<DataTableColumns<Api.Backtest.BacktestItem>>(() => 
 ]);
 
 onMounted(() => {
+  // 推荐板块等页面跳转时预填策略：同时带入发起表单与列表筛选
+  const rawStrategyId = route.query.strategy_id;
+  const queryStrategyId = typeof rawStrategyId === 'string' ? Number(rawStrategyId) : Number.NaN;
+  if (!Number.isNaN(queryStrategyId)) {
+    runForm.strategy_id = queryStrategyId;
+    listSearch.strategy_id = queryStrategyId;
+  }
   loadStrategyOptions();
   loadList();
 });
