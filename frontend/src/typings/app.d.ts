@@ -1622,6 +1622,17 @@ declare namespace App {
           statLatestDate: string;
           viewReports: string;
         };
+        macro: {
+          title: string;
+          subtitle: string;
+          countryCN: string;
+          countryUS: string;
+          mom: string;
+          syncBtn: string;
+          syncDone: string;
+          historyTitle: string;
+          emptyTip: string;
+        };
         financial: {
           title: string;
           subtitle: string;
@@ -1837,6 +1848,7 @@ declare namespace App {
           maxPositions: string;
           stopLoss: string;
           takeProfit: string;
+          trailingDrawdown: string;
           status: string;
           tip: string;
         };
