@@ -10,14 +10,16 @@
 - 东财 push2 接口对高频请求有 IP 级封禁，异常/限流时自动降级
 - 腾讯板块排行（getRank）字段完整但分类体系为申万行业（hy2=申万二级）/腾讯概念，
   与东财板块代码体系不同，跨源快照不可混用对比
+- 出站并发/间隔/超时/熔断统一由 core.datasource.gateway 按源接管（datasource.* 配置驱动）；
+  “东财连续失败 3 次整批切同花顺”“同花顺软限流（THSRateLimitedError）熔断”为业务级降级逻辑，保留在本层
 """
 import asyncio
 import io
 import logging
-import time
 
 import httpx
 
+from core.datasource.gateway import call_external, call_external_async
 from modules.stock.services._common import num, normalize_code
 from modules.stock.services.market_fetcher import FUND_FLOW_RETRY_DELAY
 
@@ -34,10 +36,6 @@ _EM_CLIST_HOSTS = (
     "push2.eastmoney.com",       # 实时行情（主）
     "push2delay.eastmoney.com",  # 延时行情（实时源 IP 限流时降级，收盘后同步数据无差异）
 )
-# 板块内个股并发上限与单请求间隔：push2 对高频请求有 IP 级封禁（2026-09-23 起实测
-# 连续多日整段封禁，诱因疑似每日批量成分股抓取+行情轮询的累计请求密度），取保守值
-_EM_TOP_STOCKS_CONCURRENCY = 3
-_EM_TOP_STOCKS_INTERVAL = 0.3
 _THS_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36"
@@ -45,11 +43,6 @@ _THS_UA = (
 _THS_RANK_URL = "http://q.10jqka.com.cn/thshy/index/field/199112/order/desc/page/{page}/ajax/1/"
 # 同花顺板块成分股详情页（ajax 片段）：不能带 field 段否则 403，须逐请求刷新 v cookie
 _THS_CONS_URL = "http://q.10jqka.com.cn/{kind}/detail/order/desc/page/{page}/ajax/1/code/{code}/"
-# 同花顺连续快速请求会 302 跳登录（软限流，实测 0.25s 间隔约 6 页触发），必须压低速率
-_THS_CONS_PAGE_INTERVAL = 0.5
-_THS_CONCURRENCY = 2
-# akshare 同步接口无超时（源挂住会拖死任务），单次调用统一超时兜底
-_AK_CALL_TIMEOUT = 30
 
 
 def _pick(row, *keys):
@@ -75,7 +68,7 @@ async def _pick_em_clist_url(client: httpx.AsyncClient) -> str:
     for host in _EM_CLIST_HOSTS:
         url = f"https://{host}/api/qt/clist/get"
         try:
-            resp = await client.get(url, params=params)
+            resp = await call_external_async("eastmoney", client.get, url, params=params)
             if resp.json().get("rc") == 0:
                 return url
         except Exception as e:  # noqa: BLE001
@@ -90,7 +83,8 @@ async def _fetch_board_leading_stocks_em(
 
     板块列表接口的领涨股列只有名称无代码，需按板块逐个补抓成分涨幅前三。
     """
-    resp = await client.get(
+    resp = await call_external_async(
+        "eastmoney", client.get,
         clist_url,
         params={
             "pn": 1,
@@ -127,24 +121,21 @@ async def _enrich_leading_stocks(items: list[dict]) -> None:
 
     单板块失败不影响整体，回退为列表自带单只领涨股（名称无代码）；
     补抓成功时用 top1 回填旧三字段，补齐东财源缺失的领涨股代码。
+    并发与请求间隔由网关 eastmoney 源配置统一接管。
     """
-    sem = asyncio.Semaphore(_EM_TOP_STOCKS_CONCURRENCY)
-
     async with httpx.AsyncClient(timeout=10, headers=_QQ_HEADERS) as client:
         # 域名探测一次：实时源被限流时整批切到延时源，避免逐板块重复探测
         clist_url = await _pick_em_clist_url(client)
 
         async def _enrich_one(it: dict) -> None:
-            async with sem:
-                try:
-                    leading = await _fetch_board_leading_stocks_em(client, clist_url, it["board_code"])
-                except Exception as e:
-                    logger.warning(
-                        "板块领涨股前三名抓取失败(%s %s): %s",
-                        it["board_code"], it["board_name"], e,
-                    )
-                    leading = []
-                await asyncio.sleep(_EM_TOP_STOCKS_INTERVAL)
+            try:
+                leading = await _fetch_board_leading_stocks_em(client, clist_url, it["board_code"])
+            except Exception as e:
+                logger.warning(
+                    "板块领涨股前三名抓取失败(%s %s): %s",
+                    it["board_code"], it["board_name"], e,
+                )
+                leading = []
             if leading:
                 it["leading_stocks"] = leading
                 top1 = leading[0]
@@ -185,9 +176,9 @@ async def _fetch_board_list_em(board_type: str) -> list[dict]:
     import akshare as ak
 
     if board_type == "industry":
-        df = await asyncio.to_thread(ak.stock_board_industry_name_em)
+        df = await call_external("eastmoney", ak.stock_board_industry_name_em)
     else:
-        df = await asyncio.to_thread(ak.stock_board_concept_name_em)
+        df = await call_external("eastmoney", ak.stock_board_concept_name_em)
 
     items = []
     for _, row in df.iterrows():
@@ -232,7 +223,7 @@ def _ths_v_code() -> str:
 
 
 def _fetch_board_list_ths_sync() -> list[dict]:
-    """同花顺行业板块一览表（同步实现，供 asyncio.to_thread 调用）
+    """同花顺行业板块一览表（同步实现，经网关 call_external 转线程执行）
 
     页面含成交额/净流入/上涨家数/下跌家数/领涨股，无换手率与股票代码。
     同花顺对 v cookie 校验严格，必须走 http 且每次请求刷新 v 值。
@@ -305,7 +296,7 @@ def _fetch_board_list_ths_sync() -> list[dict]:
 
 
 async def _fetch_board_list_ths() -> list[dict]:
-    return await asyncio.to_thread(_fetch_board_list_ths_sync)
+    return await call_external("ths", _fetch_board_list_ths_sync)
 
 
 async def _fetch_board_list_qq(board_type: str) -> list[dict]:
@@ -322,7 +313,8 @@ async def _fetch_board_list_qq(board_type: str) -> list[dict]:
         offset = 0
         page_size = 100
         while True:
-            resp = await client.get(
+            resp = await call_external_async(
+                "tencent", client.get,
                 _QQ_GETRANK_URL,
                 params={
                     "board_type": qq_board_type,
@@ -375,7 +367,6 @@ async def _fetch_board_list_qq(board_type: str) -> list[dict]:
             total = num(data.get("total")) or 0
             if not rows or offset >= total:
                 break
-            await asyncio.sleep(0.5)
 
     if not items:
         raise RuntimeError(f"腾讯板块排行为空({board_type})")
@@ -396,7 +387,8 @@ async def fetch_board_fund_flow(board_type: str) -> dict[str, float | None]:
     last_exc: Exception | None = None
     for attempt in range(2):
         try:
-            df = await asyncio.to_thread(
+            df = await call_external(
+                "eastmoney",
                 ak.stock_sector_fund_flow_rank,
                 indicator=indicator,
                 sector_type=sector_type,
@@ -429,8 +421,6 @@ _EM_KLINE_HOSTS = (
     "44.push2his.eastmoney.com",
     "12.push2his.eastmoney.com",
 )
-# 板块名->代码映射分页拉取间隔：映射页单页 100 条，快速连发易触发限流
-_EM_BOARD_MAP_INTERVAL = 0.5
 
 
 async def _em_request_with_hosts(
@@ -447,7 +437,7 @@ async def _em_request_with_hosts(
         url = f"https://{host}{path}"
         for i in range(attempts_per_host):
             try:
-                resp = await client.get(url, params=params)
+                resp = await call_external_async("eastmoney", client.get, url, params=params)
                 resp.raise_for_status()
                 payload = resp.json()
                 if payload.get("rc") != 0:
@@ -532,7 +522,6 @@ async def _fetch_em_board_code_map(
         if not diff or page * page_size >= total:
             break
         page += 1
-        await asyncio.sleep(_EM_BOARD_MAP_INTERVAL)
     return name_map
 
 
@@ -580,7 +569,7 @@ async def _fetch_ths_board_code_map(board_type: str) -> dict[str, str]:
         if board_type == "industry"
         else ak.stock_board_concept_name_ths
     )
-    df = await asyncio.wait_for(asyncio.to_thread(fn), timeout=_AK_CALL_TIMEOUT)
+    df = await call_external("ths", fn)
     name_map: dict[str, str] = {}
     for _, row in df.iterrows():
         name = str(row.get("name", "")).strip()
@@ -606,7 +595,7 @@ async def _fetch_ths_board_code_map_safe(board_type: str) -> dict[str, str]:
 
 
 def _fetch_ths_constituents_sync(board_type: str, code: str) -> list[dict]:
-    """同花顺板块成分股全量分页抓取（同步，供 to_thread 调用）
+    """同花顺板块成分股全量分页抓取（同步，经网关 call_external 转线程执行）
 
     页面 20 行/页，page_info 形如 '2/10'；无近5/10日涨跌幅列，
     gain_5d/gain_10d 置 None 由查询侧按成分股日快照自累计兜底。
@@ -657,20 +646,17 @@ def _fetch_ths_constituents_sync(board_type: str, code: str) -> list[dict]:
                 "gain_10d": None,
             })
         page += 1
-        if page <= total_pages:
-            time.sleep(_THS_CONS_PAGE_INTERVAL)
     return items
 
 
 async def _fallback_ths_constituents(
     board_type: str, board_name, ths_maps: dict[str, dict[str, str]],
-    sem: asyncio.Semaphore,
 ) -> list[dict] | None:
     """东财失败时的同花顺成分股兜底（按板块名解析 88/30 代码）
 
-    映射缺失时懒抓一次（同一批次共享缓存）；独立信号量限速
-    （同花顺软限流比东财更敏感）。返回 None 表示名称不可解析
-    （确定性失败，不计入限流熔断），[] 表示抓取失败，非空为成功。
+    映射缺失时懒抓一次（同一批次共享缓存）；限速由网关 ths 源配置统一接管。
+    返回 None 表示名称不可解析（确定性失败，不计入限流熔断），[] 表示抓取失败，
+    非空为成功。
     """
     name = str(board_name or "").strip()
     if not name:
@@ -687,18 +673,14 @@ async def _fallback_ths_constituents(
     )
     if not code:
         return None
-    async with sem:
-        try:
-            return await asyncio.wait_for(
-                asyncio.to_thread(_fetch_ths_constituents_sync, board_type, code),
-                timeout=180,
-            )
-        except THSRateLimitedError:
-            # 软限流是批次级信号：向上抛出由调用方立即熔断同花顺
-            raise
-        except Exception as e:  # noqa: BLE001
-            logger.warning("同花顺成分股兜底失败(%s %s): %s", code, name, e)
-            return []
+    try:
+        return await call_external("ths", _fetch_ths_constituents_sync, board_type, code)
+    except THSRateLimitedError:
+        # 软限流是批次级信号：向上抛出由调用方立即熔断同花顺
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.warning("同花顺成分股兜底失败(%s %s): %s", code, name, e)
+        return []
 
 
 async def _fetch_board_kline_paged(
@@ -795,7 +777,6 @@ async def _fetch_board_constituents_paged(
         if not diff or page * page_size >= total:
             break
         page += 1
-        await asyncio.sleep(_EM_TOP_STOCKS_INTERVAL)
     return items
 
 
@@ -815,9 +796,8 @@ async def fetch_boards_constituents_batch(
     board_code 非 BK 前缀（腾讯兜底源 pt0xxxxx 等）时按板块名解析东财代码。
     东财 push2 被 IP 封禁时（名映射/成分股分页拉取连续失败）自动整批切同花顺：
     连续 3 个板块东财失败即熔断，后续板块直接走同花顺，避免逐板块空耗重试时间。
+    并发/间隔由网关 eastmoney/ths 源配置统一接管，本层只保留业务级熔断。
     """
-    sem = asyncio.Semaphore(_EM_TOP_STOCKS_CONCURRENCY)
-    ths_sem = asyncio.Semaphore(_THS_CONCURRENCY)
     board_types = {str(b.get("board_type") or "industry") for b in boards}
     state = {"em_fail_streak": 0, "em_down": False, "ths_fail_streak": 0, "ths_down": False}
 
@@ -839,59 +819,56 @@ async def fetch_boards_constituents_batch(
 
         async def _one(board: dict) -> list[dict]:
             bt = str(board.get("board_type") or "industry")
-            async with sem:
-                try:
-                    if state["em_down"]:
-                        raise RuntimeError("东财熔断中（连续失败）")
-                    em_code = _resolve_em_board_code(board, name_maps.get(bt, {}))
-                    if not em_code:
-                        raise RuntimeError("按板块名未匹配到东财板块代码")
-                    stocks = await _fetch_board_constituents_paged(client, em_code)
-                    state["em_fail_streak"] = 0
-                    return stocks
-                except Exception as e:  # noqa: BLE001
-                    state["em_fail_streak"] += 1
-                    if state["em_fail_streak"] >= 3:
-                        state["em_down"] = True
-                    if state["ths_down"]:
-                        logger.warning(
-                            "板块成分股抓取失败(%s %s)，东财与同花顺均熔断: %s",
-                            board.get("board_code"), board.get("board_name"), e,
-                        )
-                        return []
-                    stocks = None
-                    try:
-                        stocks = await _fallback_ths_constituents(
-                            bt, board.get("board_name"), ths_maps, ths_sem,
-                        )
-                    except THSRateLimitedError as te:
-                        state["ths_down"] = True
-                        logger.warning("同花顺软限流，本批次余下板块熔断同花顺: %s", te)
-                    if stocks:
-                        state["ths_fail_streak"] = 0
-                        logger.info(
-                            "板块成分股改用同花顺源(%s %s)，东财失败: %s",
-                            board.get("board_code"), board.get("board_name"), e,
-                        )
-                        return stocks
-                    if stocks is None:
-                        # 名称不可解析：同花顺侧确定性失败，不计入限流熔断
-                        logger.warning(
-                            "板块成分股按名未匹配到同花顺代码(%s %s)",
-                            board.get("board_code"), board.get("board_name"),
-                        )
-                        return []
-                    state["ths_fail_streak"] += 1
-                    if state["ths_fail_streak"] >= 3:
-                        state["ths_down"] = True
-                        logger.warning("同花顺成分股兜底连续失败，本批次余下板块熔断同花顺")
+            try:
+                if state["em_down"]:
+                    raise RuntimeError("东财熔断中（连续失败）")
+                em_code = _resolve_em_board_code(board, name_maps.get(bt, {}))
+                if not em_code:
+                    raise RuntimeError("按板块名未匹配到东财板块代码")
+                stocks = await _fetch_board_constituents_paged(client, em_code)
+                state["em_fail_streak"] = 0
+                return stocks
+            except Exception as e:  # noqa: BLE001
+                state["em_fail_streak"] += 1
+                if state["em_fail_streak"] >= 3:
+                    state["em_down"] = True
+                if state["ths_down"]:
                     logger.warning(
-                        "板块成分股抓取失败(%s %s): %s",
+                        "板块成分股抓取失败(%s %s)，东财与同花顺均熔断: %s",
                         board.get("board_code"), board.get("board_name"), e,
                     )
                     return []
-                finally:
-                    await asyncio.sleep(_EM_TOP_STOCKS_INTERVAL)
+                stocks = None
+                try:
+                    stocks = await _fallback_ths_constituents(
+                        bt, board.get("board_name"), ths_maps,
+                    )
+                except THSRateLimitedError as te:
+                    state["ths_down"] = True
+                    logger.warning("同花顺软限流，本批次余下板块熔断同花顺: %s", te)
+                if stocks:
+                    state["ths_fail_streak"] = 0
+                    logger.info(
+                        "板块成分股改用同花顺源(%s %s)，东财失败: %s",
+                        board.get("board_code"), board.get("board_name"), e,
+                    )
+                    return stocks
+                if stocks is None:
+                    # 名称不可解析：同花顺侧确定性失败，不计入限流熔断
+                    logger.warning(
+                        "板块成分股按名未匹配到同花顺代码(%s %s)",
+                        board.get("board_code"), board.get("board_name"),
+                    )
+                    return []
+                state["ths_fail_streak"] += 1
+                if state["ths_fail_streak"] >= 3:
+                    state["ths_down"] = True
+                    logger.warning("同花顺成分股兜底连续失败，本批次余下板块熔断同花顺")
+                logger.warning(
+                    "板块成分股抓取失败(%s %s): %s",
+                    board.get("board_code"), board.get("board_name"), e,
+                )
+                return []
 
         stocks_list = await asyncio.gather(*(_one(b) for b in boards))
     return list(zip(boards, stocks_list))
@@ -902,13 +879,11 @@ async def fetch_boards_history_batch(
 ) -> list[tuple[dict, list[dict]]]:
     """批量抓取多板块历史日K（共享连接，单板块失败不影响整体）
 
-    用于历史回填，并发与间隔比实时接口更保守（push2his 存在 IP 级限流
-    断连，过高的请求密度会触发整段封锁）。返回与入参顺序一致的
-    [(board, klines)]，失败板块的 klines 为空列表。
+    用于历史回填。返回与入参顺序一致的 [(board, klines)]，失败板块的 klines 为空列表。
     board_code 非 BK 前缀（腾讯兜底源 pt0xxxxx 等）时按板块名解析东财代码。
+    concurrency/interval 形参保留仅为兼容既有调用方：push2his 的并发与请求间隔
+    已由网关 eastmoney 源配置统一接管，本层不再自行限速。
     """
-    sem = asyncio.Semaphore(concurrency)
-
     async with httpx.AsyncClient(timeout=10, headers=_QQ_HEADERS) as client:
         name_maps = {
             bt: await _fetch_em_board_code_map(client, bt)
@@ -916,22 +891,19 @@ async def fetch_boards_history_batch(
         }
 
         async def _one(board: dict) -> list[dict]:
-            async with sem:
-                try:
-                    em_code = _resolve_em_board_code(
-                        board, name_maps.get(str(board.get("board_type") or "industry"), {}),
-                    )
-                    if not em_code:
-                        raise RuntimeError("按板块名未匹配到东财板块代码")
-                    return await _fetch_board_kline_paged(client, em_code, days)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(
-                        "板块历史日K抓取失败(%s %s): %s",
-                        board["board_code"], board["board_name"], e,
-                    )
-                    return []
-                finally:
-                    await asyncio.sleep(interval)
+            try:
+                em_code = _resolve_em_board_code(
+                    board, name_maps.get(str(board.get("board_type") or "industry"), {}),
+                )
+                if not em_code:
+                    raise RuntimeError("按板块名未匹配到东财板块代码")
+                return await _fetch_board_kline_paged(client, em_code, days)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "板块历史日K抓取失败(%s %s): %s",
+                    board["board_code"], board["board_name"], e,
+                )
+                return []
 
         klines_list = await asyncio.gather(*(_one(b) for b in boards))
     return list(zip(boards, klines_list))

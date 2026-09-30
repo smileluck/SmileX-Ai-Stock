@@ -28,6 +28,7 @@ from modules.recommend.router import router as recommend_router
 from modules.macro.router import router as macro_router
 from modules.financial.router import router as financial_router
 from modules.research.router import router as research_router
+from modules.datasource.router import router as datasource_router
 from modules.demo.router import router as demo_router
 from modules.admin.endpoints.sys.health import health_router
 from core.registry.setup_registry import setup_app
@@ -83,6 +84,7 @@ async def lifespan(app: FastAPI):
     import modules.scheduler.tasks.financial_run  # noqa: F401
     import modules.scheduler.tasks.research_sync  # noqa: F401
     import modules.scheduler.tasks.rotation_sync  # noqa: F401
+    import modules.scheduler.tasks.datasource_stats  # noqa: F401
 
     manager = SchedulerManager.get_instance()
 
@@ -182,6 +184,7 @@ app.include_router(financial_router)
 # AI 研报中心模块（券商研报采集 + 概览统计 + 供策略分析）
 app.include_router(research_router)
 # 数据源管理模块（出站限流/熔断配置 + 用量统计 + FQGate 网关管理）
+app.include_router(datasource_router)
 # 示例模块（akshare / Baostock SDK 简单调用演示）
 app.include_router(demo_router)
 # 开放API（商户 HMAC 签名鉴权）

@@ -5,13 +5,14 @@
 大宗交易（暗盘）抓取层
 统一封装东方财富大宗交易榜单的抓取逻辑，返回标准化的 dict 列表。
 数据源：akshare stock_dzjy_mrtj（每日统计）/ stock_dzjy_hygtj（活跃A股统计）
+出站限流/超时统一走 core.datasource.gateway（datasource.* 配置驱动）
 """
-import asyncio
 import logging
 from datetime import date
 
 import httpx
 
+from core.datasource.gateway import call_external
 from modules.stock.services._common import num, normalize_code
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,9 @@ async def fetch_daily(
     import akshare as ak
 
     try:
-        df = await asyncio.to_thread(lambda: ak.stock_dzjy_mrtj(start_date=start_date, end_date=end_date))
+        df = await call_external(
+            "eastmoney", ak.stock_dzjy_mrtj, start_date=start_date, end_date=end_date
+        )
     except (TypeError, KeyError) as exc:
         # 东财对无数据日期/限流时返回 result: null，akshare 未做空值判断直接取
         # data_json["result"]["data"] 触发 TypeError；这里视为无数据。
@@ -114,7 +117,7 @@ async def fetch_active(
     import akshare as ak
 
     try:
-        df = await asyncio.to_thread(lambda: ak.stock_dzjy_hygtj(symbol=stat_window))
+        df = await call_external("eastmoney", ak.stock_dzjy_hygtj, symbol=stat_window)
     except (TypeError, KeyError) as exc:
         # 同 fetch_daily：东财返回空 / 限流时 akshare 内部取 result.data 报错
         logger.warning("东财大宗交易活跃A股无数据或被限流(%s): %s", stat_window, exc)

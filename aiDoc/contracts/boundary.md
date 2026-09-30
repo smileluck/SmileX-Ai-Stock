@@ -514,3 +514,22 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 调度任务 `recommend.daily_run`（cron `45 16 * * mon-fri`，收盘各同步任务之后，同日 success/running 去重）
 - 菜单迁移 0041：MENU id 2942406616008035（name `ai_stock-recommend`，parent 8001，sort 11）+ BUTTON `recommend:list`（036）/`recommend:run`（037）
 - 前端 API：`frontend/src/service/api/recommend.ts`，类型 `Api.Recommend.*`（`frontend/src/typings/api/recommend.d.ts`）；页面 `views/ai/stock-recommend/index.vue`；i18n `page.aiRecommend.*`
+
+---
+
+## 数据源管理模块契约（2026-09-29，迁移 0042/0043）
+
+- 前缀 `/admin/datasource`；权限码：`datasource:list`（查询）、`datasource:config`（改配置/启停/手动熔断）、`datasource:test`（FQGate 连通性测试）
+- 接口：
+  - `GET /list` → `[{key, name, category, description, config: {enabled, max_concurrency, min_interval_ms, timeout_s, circuit_mode, circuit_failure_threshold, circuit_recovery_s}, runtime: {circuit_state, consecutive_failures, in_flight, last_error, last_error_at}, today: {total_calls, failed_calls, rejected_calls, success_rate, avg_latency_ms}}]`；`circuit_mode: auto|force_open|force_closed`（auto=自动熔断；force_open=手动熔断拒绝一切外呼；force_closed=手动恢复强制可用）；`circuit_state: closed|half_open|open`
+  - `POST /config/update`：body `{source_key, enabled?, max_concurrency?, min_interval_ms?, timeout_s?, circuit_mode?, ...}`，仅传字段生效；保存后清运行态（熔断计数归零）+ invalidate 配置缓存即时生效
+  - `POST /fqgate/config`：body `{base_url}`（保存 FQGate 网关地址，sys_config key `datasource.fqgate_gateway`）
+  - `GET /stats?days=7` → `[{source_key, stat_hour, total_calls, failed_calls, rejected_calls, avg_latency_ms}]`（库表 `sys_data_source_stat`，按小时聚合）
+  - `GET /events?source=` → 该源最近失败事件（内存环形缓冲，每源 20 条，重启清空）
+  - `POST /fqgate/test` → 分步连通性测试 `[{step, ok, latency_ms, error?}]`（health → 日K → 批量报价）
+- 出站网关统一入口 `core/datasource/gateway.py`：`call_external(source, fn)`（同步，自动 to_thread）/ `call_external_async(source, coro_fn)`；所有对外 HTTP/协议调用必须经网关以获得并发信号量+最小间隔+超时+熔断+统计
+- 配置存 sys_config 表（group=`network`，key 前缀 `datasource.<source_key>`，value 为 JSON ≤255 字符），30s 进程内缓存（调用路径不回源，靠调度任务 `datasource.stats_flush` 每 60s 刷新 + 面板保存时 invalidate）
+- 统计口径：熔断/禁用拒绝计 `rejected_calls` 不计失败（未真正外呼）；失败含超时/异常；`flush_to_db()` 60s 刷盘、每日 3 点清理 30 天前
+- FQGate（source_key `fqgate`）为本机同花顺行情网关（默认 `http://127.0.0.1:17281`，无鉴权），作为日线/日历/实时报价的全链路兜底源：market_data（东财→baostock→FQGate）、market_fetcher（指数实时 东财→新浪→FQGate→baostock，指数历史末级 FQGate）、quote_helper（新浪→FQGate）；未运行时连接被拒自动降级跳过
+- 菜单迁移 0043：MENU `manage_datasource`（id 8038，系统管理目录下，path `/manage/datasource`，component `view.manage_datasource`）+ BUTTON `datasource:list/config/test`（8039-8041）
+- 前端 API：`frontend/src/service/api/datasource.ts`，类型 `Api.DataSource.*`（`frontend/src/typings/api/datasource.d.ts`）；页面 `views/manage/datasource/`（FQGate 网关卡片 + 源状态表 + 配置 Drawer + 失败事件弹窗 + 近 7 天用量 ECharts，30s 自动刷新）；i18n `page.manage.datasource.*`

@@ -8,21 +8,20 @@
 
 返回字段：
     report_period / stock_name / metrics（列名→值，仅保留白名单关键指标）
+
+出站限流/超时统一走 core.datasource.gateway（datasource.* 配置驱动）。
 """
-import asyncio
 import logging
 import re
 from datetime import date
 from typing import Optional
 
+from core.datasource.gateway import call_external
+
 logger = logging.getLogger(__name__)
 
 # 抓取的报告期数量（近 3 年季度报告期）
 REPORT_PERIODS = 8
-
-# akshare 底层 requests 无超时：源挂住时 to_thread 永不返回，会拖死整个
-# 同步任务，单次调用超时后按失败跳过该个股
-_AK_CALL_TIMEOUT = 30
 
 # 指标白名单（新浪财务指标列名 → 展示名；列名容错用包含匹配）
 _METRIC_WHITELIST = {
@@ -109,11 +108,9 @@ async def fetch_financial_reports(stock_code: str, start_year: Optional[str] = N
     if start_year is None:
         start_year = str(date.today().year - 3)
     try:
-        df = await asyncio.wait_for(
-            asyncio.to_thread(
-                lambda: ak.stock_financial_analysis_indicator(symbol=code, start_year=start_year)
-            ),
-            timeout=_AK_CALL_TIMEOUT,
+        df = await call_external(
+            "sina", ak.stock_financial_analysis_indicator,
+            symbol=code, start_year=start_year,
         )
     except Exception:  # noqa: BLE001
         logger.warning("财务指标抓取失败: %s", code, exc_info=True)

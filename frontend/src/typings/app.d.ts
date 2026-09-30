@@ -1295,6 +1295,70 @@ declare namespace App {
               timeRange: string;
             };
           };
+          datasource: {
+            title: string;
+            name: string;
+            category: string;
+            enabled: string;
+            circuitState: string;
+            circuitStates: {
+              closed: string;
+              halfOpen: string;
+              open: string;
+            };
+            todayUsage: string;
+            usageCalls: string;
+            successRate: string;
+            avgLatency: string;
+            lastError: string;
+            noError: string;
+            events: string;
+            eventsTitle: string;
+            eventTime: string;
+            eventOutcome: string;
+            eventError: string;
+            eventLatency: string;
+            outcomes: {
+              fail: string;
+              timeout: string;
+            };
+            editConfig: string;
+            configForm: {
+              maxConcurrency: string;
+              minIntervalMs: string;
+              timeoutS: string;
+              failureThreshold: string;
+              cooldownS: string;
+              circuitMode: string;
+              circuitModes: {
+                auto: string;
+                forceOpen: string;
+                forceClosed: string;
+              };
+            };
+            fqgate: {
+              title: string;
+              baseUrl: string;
+              baseUrlPlaceholder: string;
+              saveBaseUrl: string;
+              baseUrlSaved: string;
+              testConnection: string;
+              testPassed: string;
+              testFailed: string;
+              steps: {
+                health: string;
+                dailyKlines: string;
+                realtimeQuote: string;
+              };
+            };
+            stats: {
+              title: string;
+              filterSources: string;
+              totalCalls: string;
+              successRate: string;
+              noData: string;
+            };
+          };
         };
         log: {
           loginLog: {

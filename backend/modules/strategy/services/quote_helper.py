@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-个股实时行情辅助层：基于新浪批量行情接口（经 stock 模块公开封装 fetch_sina_spot_quotes）
+个股实时行情辅助层：新浪批量行情（经 stock 模块公开封装 fetch_sina_spot_quotes），
+新浪失败时降级 FQGate 本机网关（_fqgate.fetch_spot_quotes）。
 供策略建仓定价与持仓跟踪刷新使用
 """
 import logging
 
+from modules.stock.services import _fqgate
 from modules.stock.services.market_fetcher import fetch_sina_spot_quotes
 
 logger = logging.getLogger(__name__)
@@ -27,22 +29,34 @@ def _to_sina_code(code: str) -> str:
 
 async def fetch_latest_quotes(codes: list[str]) -> dict[str, dict]:
     """批量获取个股最新价与涨跌幅。返回 {原始6位代码: {price, change_pct}}，
-    失败/停牌的代码缺席。change_pct 为相对昨收的百分比。"""
+    失败/停牌的代码缺席。change_pct 为相对昨收的百分比。
+    降级链：新浪 hq → FQGate 本机网关。"""
     if not codes:
         return {}
     sina_map = {_to_sina_code(c): c for c in codes}
     try:
         quotes = await fetch_sina_spot_quotes(list(sina_map.keys()))
+        result = {
+            sina_map[s]: {"price": q.get("latest_price"), "change_pct": q.get("change_pct")}
+            for s, q in quotes.items()
+            if s in sina_map and q.get("latest_price")
+        }
+        if result:
+            return result
+        logger.warning("新浪批量行情返回为空，降级 FQGate")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("批量获取实时行情失败: %s", exc)
+        logger.warning("新浪批量行情失败，降级 FQGate: %s", exc)
+
+    try:
+        fq_quotes = await _fqgate.fetch_spot_quotes(codes)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("FQGate 批量行情失败: %s", exc)
         return {}
-    result: dict[str, dict] = {}
-    for sina_code, quote in quotes.items():
-        price = quote.get("latest_price")
-        origin = sina_map.get(sina_code)
-        if origin and price:
-            result[origin] = {"price": price, "change_pct": quote.get("change_pct")}
-    return result
+    return {
+        code: {"price": q.get("latest_price"), "change_pct": q.get("change_pct")}
+        for code, q in fq_quotes.items()
+        if q.get("latest_price")
+    }
 
 
 async def fetch_latest_prices(codes: list[str]) -> dict[str, float]:

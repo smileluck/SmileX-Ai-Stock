@@ -5,12 +5,14 @@
 股票热榜抓取层
 统一封装多源热榜的抓取逻辑，返回标准化的 dict 列表。
 每个 dict 包含：stock_code / stock_name / rank / latest_price / change_pct / hot_value
+出站限流/超时统一走 core.datasource.gateway（datasource.* 配置驱动）
 """
-import asyncio
 import logging
 import re
 
 import httpx
+
+from core.datasource.gateway import call_external, call_external_async
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +126,8 @@ async def _fetch_em_rank(client: httpx.AsyncClient) -> list[dict]:
     - 名称/最新价/涨跌幅经 _fill_quotes 由新浪批量行情补全；
     - 热度用 101-排名 的合成指数填充（非源站原始数据），保证热度列可展示。
     """
-    resp = await client.post(
+    resp = await call_external_async(
+        "eastmoney", client.post,
         "https://emappdata.eastmoney.com/stockrank/getAllCurrentList",
         json={
             "appId": "appId01",
@@ -167,7 +170,7 @@ async def _fetch_xq(client: httpx.AsyncClient, func_name: str) -> list[dict]:
     """
     import akshare as ak
 
-    df = await asyncio.to_thread(lambda: getattr(ak, func_name)("最热门"))
+    df = await call_external("xueqiu", getattr(ak, func_name), "最热门")
     items = []
     top_n = 100
     for idx, (_, row) in enumerate(df.iterrows(), 1):
@@ -211,7 +214,7 @@ async def _fetch_ths_hot(client: httpx.AsyncClient) -> list[dict]:
         "page_size": 100,
         "page": 1,
     }
-    resp = await client.get(url, headers=headers, params=params, timeout=15)
+    resp = await call_external_async("ths", client.get, url, headers=headers, params=params, timeout=15)
     resp.raise_for_status()
 
     payload = resp.json()

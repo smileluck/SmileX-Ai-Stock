@@ -11,6 +11,7 @@ import logging
 
 import httpx
 
+from core.datasource.gateway import call_external_async
 from modules.stock.services._common import num
 
 logger = logging.getLogger(__name__)
@@ -81,8 +82,9 @@ async def fetch_spot_quotes(codes: list[str], client: httpx.AsyncClient | None =
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=15)
     try:
-        resp = await client.get(
-            _QUOTE_URL.format(codes=",".join(codes)), headers=_HEADERS, timeout=15
+        resp = await call_external_async(
+            "sina", client.get,
+            _QUOTE_URL.format(codes=",".join(codes)), headers=_HEADERS, timeout=15,
         )
         resp.raise_for_status()
     finally:

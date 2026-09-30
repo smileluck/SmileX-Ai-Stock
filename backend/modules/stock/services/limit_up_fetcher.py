@@ -6,12 +6,13 @@
 - 涨停股池：akshare stock_zt_pool_em（收盘仍封板）
 - 炸板股池：akshare stock_zt_pool_zbgc_em（当日触板但未封住，仅支持最近 30 个交易日）
 东财涨停池无涨停原因字段，从同花顺涨停池按代码补齐（best-effort，失败置空）
+出站限流/超时统一走 core.datasource.gateway（datasource.* 配置驱动）
 """
-import asyncio
 import logging
 
 import httpx
 
+from core.datasource.gateway import call_external, call_external_async
 from modules.stock.services._common import num, normalize_code, derive_market_board
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ async def fetch_limit_up_pool(trade_date: str) -> list[dict]:
     """
     import akshare as ak
 
-    df = await asyncio.to_thread(ak.stock_zt_pool_em, date=trade_date)
+    df = await call_external("eastmoney", ak.stock_zt_pool_em, date=trade_date)
     items = []
     for _, row in df.iterrows():
         code = normalize_code(row.get("代码", ""))
@@ -95,7 +96,7 @@ async def fetch_broken_pool(trade_date: str) -> list[dict]:
     """
     import akshare as ak
 
-    df = await asyncio.to_thread(ak.stock_zt_pool_zbgc_em, date=trade_date)
+    df = await call_external("eastmoney", ak.stock_zt_pool_zbgc_em, date=trade_date)
     items = []
     for _, row in df.iterrows():
         code = normalize_code(row.get("代码", ""))
@@ -149,7 +150,8 @@ async def fetch_limit_up_reasons(trade_date: str) -> dict[str, str]:
     async with httpx.AsyncClient(timeout=15, headers=_THS_HEADERS) as client:
         page = 1
         while True:
-            resp = await client.get(
+            resp = await call_external_async(
+                "ths", client.get,
                 _THS_LIMIT_UP_URL,
                 params={
                     "page": page,
@@ -175,7 +177,6 @@ async def fetch_limit_up_reasons(trade_date: str) -> dict[str, str]:
             if page >= int(page_info.get("count") or 1):
                 break
             page += 1
-            await asyncio.sleep(0.3)
     return reasons
 
 

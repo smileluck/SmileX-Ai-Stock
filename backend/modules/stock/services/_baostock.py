@@ -7,10 +7,11 @@ Baostock 数据源辅助层
 
 注意：baostock 是全局单连接协议，login/query/logout 必须在同一线程内串行完成，
 不能跨线程并发调用。日线数据盘后更新（当日 bar 一般晚间才可用）。
+出站限流/超时统一走 core.datasource.gateway（datasource.* 配置驱动）。
 """
-import asyncio
 import logging
 
+from core.datasource.gateway import call_external
 from modules.stock.services._common import num
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,7 @@ async def fetch_index_daily_bars(
     Returns:
         {code: [bar, ...]}，bar 为标准化 dict，按日期升序
     """
-    return await asyncio.to_thread(_query_index_daily, codes, start_date, end_date)
+    return await call_external("baostock", _query_index_daily, codes, start_date, end_date)
 
 
 # 成分股查询字段（沪深300 / 中证500 共用）
@@ -168,4 +169,4 @@ async def fetch_index_constituents() -> list[dict]:
     Returns:
         [{record_date, index_code, index_name, stock_code, stock_name, weight}, ...]
     """
-    return await asyncio.to_thread(_query_constituents)
+    return await call_external("baostock", _query_constituents)

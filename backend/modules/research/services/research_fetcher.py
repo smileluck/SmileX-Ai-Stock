@@ -9,20 +9,19 @@
 返回字段：
     stock_code / stock_name / title / url / org_name / rating / industry
     / published_date（YYYY-MM-DD）/ forecast（{年份: {eps, pe}}）
+
+出站限流/超时统一走 core.datasource.gateway（datasource.* 配置驱动）。
 """
-import asyncio
 import logging
 import re
 from typing import Optional
+
+from core.datasource.gateway import call_external
 
 logger = logging.getLogger(__name__)
 
 # 单次抓取保留的研报条数上限（东财接口返回全量历史，截取近期即可）
 MAX_REPORTS_PER_CODE = 60
-
-# akshare 底层 requests 无超时：源挂住时 to_thread 永不返回，会拖死整个
-# 同步任务，单次调用超时后按失败跳过该个股
-_AK_CALL_TIMEOUT = 30
 
 
 def _norm_code(stock_code: str) -> str:
@@ -57,10 +56,7 @@ async def fetch_research_reports(stock_code: str) -> list[dict]:
     if not code:
         return []
     try:
-        df = await asyncio.wait_for(
-            asyncio.to_thread(lambda: ak.stock_research_report_em(symbol=code)),
-            timeout=_AK_CALL_TIMEOUT,
-        )
+        df = await call_external("eastmoney", ak.stock_research_report_em, symbol=code)
     except Exception:  # noqa: BLE001
         logger.warning("个股研报抓取失败: %s", code, exc_info=True)
         return []

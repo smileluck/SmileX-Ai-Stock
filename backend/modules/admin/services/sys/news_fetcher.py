@@ -5,8 +5,10 @@
 新闻聚合抓取层
 统一封装新闻源的抓取逻辑，返回标准化的 dict 列表。
 每个 dict 包含：title / url / summary / content / source / source_name / author / raw_time
+出站限流/超时统一走 core.datasource.gateway（datasource.* 配置驱动），
+各源按域名/来源映射网关 source_key（东财 eastmoney / 财联社 cls / 同花顺 ths /
+新浪 sina / 富途 futu / 华尔街见闻 wscn / 第一财经 yicai / 金十 jin10）
 """
-import asyncio
 import logging
 import re
 from datetime import datetime, timedelta
@@ -14,6 +16,7 @@ from typing import Callable
 
 import httpx
 
+from core.datasource.gateway import call_external, call_external_async
 from database.utils.timezone import timezone
 
 logger = logging.getLogger(__name__)
@@ -146,7 +149,7 @@ async def _fetch_eastmoney(client: httpx.AsyncClient, page_size: int) -> list[di
         "client": "web", "biz": "web_news_col", "column": "350",
         "page_size": page_size, "last_time": "", "req_trace": _req_trace(),
     }
-    resp = await client.get(url, params=params, timeout=10)
+    resp = await call_external_async("eastmoney", client.get, url, params=params, timeout=10)
     data = (_safe_json(resp).get("data") or {}).get("list") or []
     items = []
     for row in data:
@@ -167,7 +170,7 @@ async def _fetch_eastmoney_global(client: httpx.AsyncClient, page_size: int) -> 
         "client": "web", "biz": "web_724", "fastColumn": "102",
         "sortEnd": "", "pageSize": page_size, "req_trace": _req_trace(),
     }
-    resp = await client.get(url, params=params, timeout=10)
+    resp = await call_external_async("eastmoney", client.get, url, params=params, timeout=10)
     _d = _safe_json(resp).get("data") or {}
     data = _d.get("fastNewsList") or _d.get("list") or []
     items = []
@@ -189,10 +192,7 @@ def _make_cls_fetcher() -> Callable:
     async def _fetcher(client: httpx.AsyncClient, page_size: int) -> list[dict]:
         import akshare as ak
 
-        def _call():
-            return ak.stock_info_global_cls()
-
-        df = await asyncio.to_thread(_call)
+        df = await call_external("cls", ak.stock_info_global_cls)
         items = []
         for _, row in df.iterrows():
             title = row.get("标题") or ""
@@ -219,7 +219,7 @@ def _make_wallstreetcn_fetcher(key: str, name: str, channel: str) -> Callable:
     """构造华尔街见闻频道抓取器"""
     async def _fetcher(client: httpx.AsyncClient, page_size: int) -> list[dict]:
         url = f"https://api-one-wscn.awtmt.com/apiv1/content/lives?channel={channel}&limit={page_size}"
-        resp = await client.get(url, timeout=10)
+        resp = await call_external_async("wscn", client.get, url, timeout=10)
         _d = _safe_json(resp).get("data", {}) or {}
         data = _d.get("items") or _d.get("results", [])
         items = []
@@ -248,7 +248,7 @@ def _make_wallstreetcn_fetcher(key: str, name: str, channel: str) -> Callable:
 async def _fetch_yicai(client: httpx.AsyncClient, page_size: int) -> list[dict]:
     url = "https://www.yicai.com/api/ajax/getlatest"
     params = {"page": 1, "size": page_size or 20}
-    resp = await client.get(url, params=params, timeout=10)
+    resp = await call_external_async("yicai", client.get, url, params=params, timeout=10)
     rows = resp.json() or []
     items = []
     for row in rows:
@@ -277,7 +277,8 @@ def _make_jin10_fetcher(key: str, name: str, important_only: bool = False) -> Ca
             "X-App-id": "bVBF4FyRTn5NJF5n",
             "X-Version": "1.0.0",
         }
-        resp = await client.get(
+        resp = await call_external_async(
+            "jin10", client.get,
             url, params={"channel": "-8200", "vip": 1},
             headers=headers, timeout=10,
         )
@@ -307,14 +308,15 @@ def _make_jin10_fetcher(key: str, name: str, important_only: bool = False) -> Ca
 # ================================================================
 # akshare 源（同花顺 / 新浪 / 富途 / 财联社）
 # ================================================================
+# 新闻源 key → 网关 source_key（同花顺注册表 key 为 tonghuashun，网关侧为 ths）
+_AK_DS_KEYS = {"tonghuashun": "ths", "sina": "sina", "futu": "futu"}
+
+
 def _fetch_via_akshare(func_name: str, key: str, name: str) -> Callable:
     async def _fetcher(client: httpx.AsyncClient, page_size: int) -> list[dict]:
         import akshare as ak  # 延迟导入，避免无依赖时报错
 
-        def _call():
-            return getattr(ak, func_name)()
-
-        df = await asyncio.to_thread(_call)
+        df = await call_external(_AK_DS_KEYS.get(key, key), getattr(ak, func_name))
         items = []
         for _, row in df.iterrows():
             content = row.get("内容") or row.get("content") or ""

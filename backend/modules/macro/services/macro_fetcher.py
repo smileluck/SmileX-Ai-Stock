@@ -13,21 +13,18 @@
 - 美国核心 CPI 月率：macro_usa_core_cpi_monthly（今值=环比%）
 
 period 统一取发布日的 YYYY-MM（金十源的日期为发布日，近似对应数据期）。
+
+出站限流/超时统一走 core.datasource.gateway（datasource.* 配置驱动）。
 """
-import asyncio
 import logging
 import math
 from datetime import date
 from typing import Optional
 
+from core.datasource.gateway import call_external
 from modules.stock.services._common import num
 
 logger = logging.getLogger(__name__)
-
-# akshare 底层 requests 多数接口无超时：数据源挂住时 to_thread 永不返回，
-# 会把整个任务拖到 timeout 上限（2026-09-22 起宏观/研报/财报任务连续
-# 300s 超时即此因），单次调用超时后按失败跳过
-_AK_CALL_TIMEOUT = 30
 
 
 def _pick(row, *names) -> Optional[float]:
@@ -60,11 +57,9 @@ def _norm_period(val) -> Optional[str]:
 
 
 async def _fetch_df(func, **kwargs):
-    """akshare 同步接口转异步（线程池），异常/超时记 WARNING 返回 None"""
+    """akshare 同步接口经网关转异步（线程池+统一限流/超时），异常记 WARNING 返回 None"""
     try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(lambda: func(**kwargs)), timeout=_AK_CALL_TIMEOUT
-        )
+        return await call_external("jin10", func, **kwargs)
     except Exception:  # noqa: BLE001
         logger.warning("宏观指标抓取失败: %s", getattr(func, "__name__", func), exc_info=True)
         return None

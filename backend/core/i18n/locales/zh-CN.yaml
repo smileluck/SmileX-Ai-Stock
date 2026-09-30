@@ -391,6 +391,16 @@ scheduler:
   log_not_found: "任务日志 {id} 不存在"
   cleaned_logs: "已清理 {count} 条日志"
 
+dataSource:
+  unknown_source: "未知的数据源 [{source}]"
+  invalid_base_url: "FQGate 地址必须以 http:// 或 https:// 开头"
+  empty_config: "配置内容不能为空"
+  unknown_field: "不支持的配置项 [{field}]"
+  invalid_circuit_mode: "熔断模式仅支持 auto / force_open / force_closed"
+  invalid_field: "配置项 [{field}] 的值无效"
+  field_out_of_range: "配置项 [{field}] 超出允许范围 {min} ~ {max}"
+  config_update_success: "数据源配置已更新"
+
 tenant:
   create_success: "创建租户成功"
   update_success: "更新租户成功"

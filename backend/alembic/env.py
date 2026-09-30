@@ -89,6 +89,7 @@ from database.models.sys.dept import SysDept
 from database.models.sys.permission import SysPermission
 from database.models.sys.scheduled_task import SysScheduledTask
 from database.models.sys.task_log import SysScheduledTaskLog
+from database.models.sys.data_source import SysDataSourceStat
 
 # Set target_metadata to Base.metadata
 target_metadata = Base.metadata

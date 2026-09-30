@@ -3,10 +3,11 @@
 
 """
 大盘指数抓取层
-数据源降级链：akshare-东财（实时主源）→ 新浪 hq（实时兜底）→ baostock（日线兜底）→ akshare-新浪（末级兜底）
+数据源降级链：akshare-东财（实时主源）→ 新浪 hq（实时兜底）→ FQGate（本机同花顺网关）→ baostock（日线兜底）→ akshare-新浪（末级兜底）
 - 东财接口异常/限流时自动降级，保证同步链路可用
 - 东财 push2 对高频请求有 IP 级封禁，此时由新浪实时行情承接
 - baostock 为日线（盘后更新，非实时）且不覆盖科创50（000688），缺口由 akshare-新浪日线补齐
+- 出站限流/超时/熔断统一走 core.datasource.gateway（datasource.* 配置驱动）
 """
 import asyncio
 import logging
@@ -14,8 +15,10 @@ from datetime import date, timedelta
 
 import httpx
 
+from core.datasource.gateway import call_external, call_external_async
 from modules.stock.services._baostock import fetch_index_daily_bars
 from modules.stock.services._common import num
+from modules.stock.services._fqgate import fetch_quotes_by_securities, resolve_security
 from modules.stock.services._sina import fetch_spot_quotes
 
 logger = logging.getLogger(__name__)
@@ -59,7 +62,7 @@ async def fetch_sina_spot_quotes(sina_codes: list[str]) -> dict[str, dict]:
 
 
 async def fetch_index_spot() -> list[dict]:
-    """抓取主要指数实时行情，东财失败时逐级降级：新浪实时 → baostock 日线
+    """抓取主要指数实时行情，东财失败时逐级降级：新浪实时 → FQGate → baostock 日线
 
     返回标准化 dict 列表，字段：
         index_code / index_name / latest_price / change_pct / change_amount /
@@ -73,7 +76,11 @@ async def fetch_index_spot() -> list[dict]:
     try:
         return await _fetch_index_spot_sina()
     except Exception as e:
-        logger.warning("新浪指数实时行情抓取失败，降级 baostock: %s", e)
+        logger.warning("新浪指数实时行情抓取失败，降级 FQGate: %s", e)
+    try:
+        return await _fetch_index_spot_fqgate()
+    except Exception as e:
+        logger.warning("FQGate 指数实时行情抓取失败，降级 baostock: %s", e)
     return await _fetch_index_spot_baostock()
 
 
@@ -81,7 +88,7 @@ async def _fetch_index_spot_akshare() -> list[dict]:
     """akshare 主源：东财指数实时行情（stock_zh_index_spot_em）"""
     import akshare as ak
 
-    df = await asyncio.to_thread(ak.stock_zh_index_spot_em, symbol="指数成份")
+    df = await call_external("eastmoney", ak.stock_zh_index_spot_em, symbol="指数成份")
     # 筛选我们关注的指数
     tracked_codes = {it["code"] for it in TRACKED_INDICES}
     tracked_names = {it["code"]: it["name"] for it in TRACKED_INDICES}
@@ -149,6 +156,52 @@ async def _fetch_index_spot_sina() -> list[dict]:
 
     if len(items) < len(TRACKED_INDICES):
         raise RuntimeError(f"新浪指数行情不完整: {len(items)}/{len(TRACKED_INDICES)}")
+    return items
+
+
+async def _fetch_index_spot_fqgate() -> list[dict]:
+    """FQGate 实时兜底：指数名称经 search-symbols 解析 {market, code} 后批量取报价
+
+    指数代码格式未公开，运行时解析并进程内缓存；实时性好于 baostock 日线
+    """
+    securities = []
+    sec_map: dict[str, dict] = {}
+    for it in TRACKED_INDICES:
+        sec = await resolve_security(it["name"])
+        if not sec:
+            continue
+        full_code = f"{sec['market']}{sec['code']}"
+        securities.append(sec)
+        sec_map[full_code] = it
+
+    quotes = await fetch_quotes_by_securities(securities)
+    items = []
+    for full_code, tracked in sec_map.items():
+        q = quotes.get(full_code)
+        if not q or q.get("latest_price") is None:
+            continue
+        prev = q.get("prev_close")
+        latest = q.get("latest_price")
+        high, low = q.get("high"), q.get("low")
+        items.append({
+            "index_code": tracked["code"],
+            "index_name": tracked["name"],
+            "latest_price": latest,
+            "change_pct": q.get("change_pct"),
+            "change_amount": round(latest - prev, 4)
+            if latest is not None and prev is not None else None,
+            "volume": q.get("volume"),
+            "turnover": q.get("turnover"),
+            "amplitude": round((high - low) / prev * 100, 4)
+            if high is not None and low is not None and prev else None,
+            "high": high,
+            "low": low,
+            "open": q.get("open"),
+            "prev_close": prev,
+        })
+
+    if len(items) < len(TRACKED_INDICES):
+        raise RuntimeError(f"FQGate 指数行情不完整: {len(items)}/{len(TRACKED_INDICES)}")
     return items
 
 
@@ -263,7 +316,9 @@ async def _fetch_market_fund_flow_httpx() -> list[dict]:
     ) as client:
         for attempt in range(2):
             try:
-                resp = await client.get(_FUND_FLOW_URL, params=_FUND_FLOW_PARAMS)
+                resp = await call_external_async(
+                    "eastmoney", client.get, _FUND_FLOW_URL, params=_FUND_FLOW_PARAMS
+                )
                 resp.raise_for_status()
                 return _parse_fund_flow_klines(resp.json().get("data") or {})
             except RuntimeError:
@@ -284,7 +339,9 @@ async def _fetch_market_fund_flow_curl_cffi() -> list[dict]:
     from curl_cffi.requests import AsyncSession
 
     async with AsyncSession(impersonate="chrome", timeout=15) as client:
-        resp = await client.get(_FUND_FLOW_URL, params=_FUND_FLOW_PARAMS)
+        resp = await call_external_async(
+            "eastmoney", client.get, _FUND_FLOW_URL, params=_FUND_FLOW_PARAMS
+        )
         resp.raise_for_status()
         return _parse_fund_flow_klines((resp.json() or {}).get("data") or {})
 
@@ -297,7 +354,7 @@ async def _fetch_market_fund_flow_akshare() -> list[dict]:
     last_exc: Exception | None = None
     for attempt in range(2):
         try:
-            df = await asyncio.to_thread(ak.stock_market_fund_flow)
+            df = await call_external("eastmoney", ak.stock_market_fund_flow)
             break
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
@@ -330,7 +387,7 @@ async def _fetch_market_fund_flow_akshare() -> list[dict]:
 
 
 async def fetch_index_history(index_code: str, start_date: str, end_date: str) -> list[dict]:
-    """抓取单指数日线历史，akshare 失败时自动降级 baostock
+    """抓取单指数日线历史，降级链：akshare → baostock → sina → FQGate
 
     Args:
         index_code: 纯数字指数代码，如 "000001"
@@ -351,7 +408,14 @@ async def fetch_index_history(index_code: str, start_date: str, end_date: str) -
         logger.warning("baostock 指数历史为空(code=%s)，降级 sina", index_code)
     except Exception as e:
         logger.warning("baostock 指数历史抓取失败(code=%s)，降级 sina: %s", index_code, e)
-    return await _fetch_index_history_sina(index_code, start_date, end_date)
+    try:
+        items = await _fetch_index_history_sina(index_code, start_date, end_date)
+        if items:
+            return items
+        logger.warning("sina 指数历史为空(code=%s)，降级 FQGate", index_code)
+    except Exception as e:
+        logger.warning("sina 指数历史抓取失败(code=%s)，降级 FQGate: %s", index_code, e)
+    return await _fetch_index_history_fqgate(index_code, start_date, end_date)
 
 
 async def _fetch_index_history_akshare(index_code: str, start_date: str, end_date: str) -> list[dict]:
@@ -364,7 +428,8 @@ async def _fetch_index_history_akshare(index_code: str, start_date: str, end_dat
     else:
         symbol = f"sz{index_code}"
 
-    df = await asyncio.to_thread(
+    df = await call_external(
+        "eastmoney",
         ak.stock_zh_index_daily_em,
         symbol=symbol,
         start_date=start_date,
@@ -408,7 +473,7 @@ async def _fetch_index_history_sina(index_code: str, start_date: str, end_date: 
     else:
         symbol = f"sz{index_code}"
 
-    df = await asyncio.to_thread(ak.stock_zh_index_daily, symbol=symbol)
+    df = await call_external("sina", ak.stock_zh_index_daily, symbol=symbol)
     if df is None or df.empty:
         return []
 
@@ -446,3 +511,30 @@ def _iso(d: str) -> str:
     """YYYYMMDD -> YYYY-MM-DD"""
     d = d.strip()
     return f"{d[:4]}-{d[4:6]}-{d[6:]}" if len(d) == 8 and "-" not in d else d
+
+
+async def _fetch_index_history_fqgate(index_code: str, start_date: str, end_date: str) -> list[dict]:
+    """FQGate 末级兜底：指数名称解析后经日 K 取历史（同花顺本机网关）"""
+    from modules.stock.services._fqgate import fetch_daily_bars_by_security
+
+    name = next(
+        (it["name"] for it in TRACKED_INDICES if it["code"] == index_code), None
+    )
+    sec = await resolve_security(name) if name else None
+    if not sec:
+        raise RuntimeError(f"FQGate 无法解析指数代码(code={index_code})")
+    bars = await fetch_daily_bars_by_security(sec, _iso(start_date), _iso(end_date))
+    return [
+        {
+            "record_date": b["date"],
+            "latest_price": b["close"],
+            "open": b["open"],
+            "high": b["high"],
+            "low": b["low"],
+            "volume": b["volume"],
+            "turnover": b["amount"],
+            "change_pct": b["pct_chg"],
+            "prev_close": b["preclose"],
+        }
+        for b in bars
+    ]

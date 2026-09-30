@@ -393,6 +393,7 @@ const local: App.I18n.Schema = {
     'business_app-user': '应用用户管理',
     manage_dict: '字典管理',
     manage_config: '系统配置',
+    manage_datasource: '数据源管理',
     manage_announcement: '通知公告',
     'manage_ip-blacklist': '黑名单管理',
     log: '日志管理',
@@ -1171,6 +1172,70 @@ const local: App.I18n.Schema = {
           taskName: '请输入任务名称',
           status: '请选择执行状态',
           timeRange: '时间范围'
+        }
+      },
+      datasource: {
+        title: '数据源列表',
+        name: '数据源名称',
+        category: '分类',
+        enabled: '启用状态',
+        circuitState: '熔断状态',
+        circuitStates: {
+          closed: '正常',
+          halfOpen: '熔断冷却中',
+          open: '手动熔断'
+        },
+        todayUsage: '今日用量',
+        usageCalls: '{total} 次调用',
+        successRate: '成功率',
+        avgLatency: '平均延迟',
+        lastError: '最近错误',
+        noError: '暂无错误',
+        events: '事件',
+        eventsTitle: '失败事件',
+        eventTime: '时间',
+        eventOutcome: '结果',
+        eventError: '错误信息',
+        eventLatency: '延迟(ms)',
+        outcomes: {
+          fail: '失败',
+          timeout: '超时'
+        },
+        editConfig: '编辑数据源配置',
+        configForm: {
+          maxConcurrency: '最大并发数',
+          minIntervalMs: '最小调用间隔(ms)',
+          timeoutS: '超时时间(s)',
+          failureThreshold: '熔断阈值(次)',
+          cooldownS: '熔断冷却(s)',
+          circuitMode: '熔断模式',
+          circuitModes: {
+            auto: '自动',
+            forceOpen: '手动熔断',
+            forceClosed: '强制可用'
+          }
+        },
+        fqgate: {
+          title: 'FQGate 网关',
+          baseUrl: '网关地址',
+          baseUrlPlaceholder: '请输入 FQGate 网关地址',
+          saveBaseUrl: '保存地址',
+          baseUrlSaved: '网关地址已更新',
+          testConnection: '连通性测试',
+          testPassed: '连通性测试通过',
+          testFailed: '连通性测试未通过',
+          steps: {
+            health: '健康检查',
+            dailyKlines: '日K线拉取',
+            realtimeQuote: '实时行情'
+          }
+        },
+        stats: {
+          title: '近 7 天用量',
+          filterSources: '按数据源筛选（默认全部）',
+          totalCalls: '总调用量',
+          successRate: '成功率(%)',
+          noData: '暂无统计数据'
         }
       }
     },

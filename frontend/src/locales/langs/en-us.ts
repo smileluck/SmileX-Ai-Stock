@@ -397,6 +397,7 @@ const local: App.I18n.Schema = {
     'business_app-user': 'App User',
     manage_dict: 'Dict Management',
     manage_config: 'System Config',
+    manage_datasource: 'Data Sources',
     manage_announcement: 'Announcement',
     'manage_ip-blacklist': 'IP Blacklist',
     log: 'Log Management',
@@ -1178,6 +1179,70 @@ const local: App.I18n.Schema = {
           taskName: 'Enter task name',
           status: 'Select status',
           timeRange: 'Time Range'
+        }
+      },
+      datasource: {
+        title: 'Data Sources',
+        name: 'Name',
+        category: 'Category',
+        enabled: 'Enabled',
+        circuitState: 'Circuit State',
+        circuitStates: {
+          closed: 'Normal',
+          halfOpen: 'Cooling Down',
+          open: 'Manually Opened'
+        },
+        todayUsage: 'Today Usage',
+        usageCalls: '{total} calls',
+        successRate: 'Success Rate',
+        avgLatency: 'Avg Latency',
+        lastError: 'Last Error',
+        noError: 'No errors',
+        events: 'Events',
+        eventsTitle: 'Failure Events',
+        eventTime: 'Time',
+        eventOutcome: 'Outcome',
+        eventError: 'Error',
+        eventLatency: 'Latency(ms)',
+        outcomes: {
+          fail: 'Fail',
+          timeout: 'Timeout'
+        },
+        editConfig: 'Edit Data Source Config',
+        configForm: {
+          maxConcurrency: 'Max Concurrency',
+          minIntervalMs: 'Min Interval(ms)',
+          timeoutS: 'Timeout(s)',
+          failureThreshold: 'Failure Threshold',
+          cooldownS: 'Cooldown(s)',
+          circuitMode: 'Circuit Mode',
+          circuitModes: {
+            auto: 'Auto',
+            forceOpen: 'Force Open',
+            forceClosed: 'Force Closed'
+          }
+        },
+        fqgate: {
+          title: 'FQGate Gateway',
+          baseUrl: 'Base URL',
+          baseUrlPlaceholder: 'Enter FQGate gateway base URL',
+          saveBaseUrl: 'Save',
+          baseUrlSaved: 'Gateway base URL updated',
+          testConnection: 'Connectivity Test',
+          testPassed: 'Connectivity test passed',
+          testFailed: 'Connectivity test failed',
+          steps: {
+            health: 'Health Check',
+            dailyKlines: 'Daily Klines',
+            realtimeQuote: 'Realtime Quote'
+          }
+        },
+        stats: {
+          title: 'Usage (Last 7 Days)',
+          filterSources: 'Filter by source (all by default)',
+          totalCalls: 'Total Calls',
+          successRate: 'Success Rate(%)',
+          noData: 'No statistics'
         }
       }
     },

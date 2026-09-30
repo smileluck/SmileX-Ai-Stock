@@ -433,6 +433,15 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'manage_datasource',
+        path: '/manage/datasource',
+        component: 'view.manage_datasource',
+        meta: {
+          title: 'manage_datasource',
+          i18nKey: 'route.manage_datasource'
+        }
+      },
+      {
         name: 'manage_dept',
         path: '/manage/dept',
         component: 'view.manage_dept',

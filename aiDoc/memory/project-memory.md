@@ -16,6 +16,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-09-29 数据源网关 + FQGate 接入 + 数据源管理面板](./business/2026-09-29_datasource_gateway_fqgate.md) — 新核心层 `core/datasource/` 统一出站网关（并发+间隔+超时+熔断+统计，sys_config `datasource.*` 配置）+ FQGate 本机同花顺网关作全链路兜底源（日K/日历/报价，未运行自动降级）+ 新模块 /admin/datasource 面板（源状态/配置/失败事件/用量图）+ 迁移 0042/0043；起因=东财 push2his IP 封禁+baostock 挂起
 - [2026-09-29 AI 推荐板块（AI 荐股：六维荐股+买点+信号直通回测/持仓）](./business/2026-09-29_stock_recommend.md) — 新模块 recommend（迁移 0040/0041）：六维度预筛 → LLM 出 10 只（涨停候选/抄底 + 预判买点）；推荐落专用策略「AI每日推荐」买入信号 → 交易引擎/持仓追踪/recorded_replay 回测零改动接入；signal 加 `entry_type`（limit=触及买点才成交）；调度 16:45；前端新页 + 首例 query 跳转消费（backtest/analysis 预填）
 - [2026-09-24 轮动成分股同步：东财降密度 + 同花顺兜底 + 双熔断](./business/2026-09-24_rotation_constituents_fallback_and_density.md) — 并发 5→3/间隔 0.1→0.3s；THS 详情页兜底（v cookie+GBK+按名解析 88/30 代码）；EM 连续 3 失败熔断、THS 限流（302 跳登录，~5-6 请求/窗）即时熔断；任务超时 900s；封禁期快照部分覆盖
 - [2026-09-19 策略执行链路并发与健壮性修复](./business/2026-09-19_strategy_execution_hardening.md) — 信号/持仓条件 UPDATE + running_key 生成列唯一索引（迁移0039）；调度器 GET_LOCK 选主 + 手动触发串行化 + leader 周期 resync；交易日历/行情降级告警/批处理容错；分页与分层规范对齐、track 写权限拆分；新错误码 11512/11513

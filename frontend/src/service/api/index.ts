@@ -6,6 +6,7 @@ export * from './notification';
 export * from './monitor';
 export * from './file';
 export * from './scheduler';
+export * from './datasource';
 export * from './export-task';
 export * from './news';
 export * from './stock-hot';

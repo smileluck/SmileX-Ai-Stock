@@ -2,32 +2,33 @@
 # -*- coding: utf-8 -*-
 
 """
-回测行情数据抓取（akshare-东财主源 + baostock 降级源）
+回测行情数据抓取（akshare-东财主源 → baostock 降级 → FQGate 本机网关末级兜底）
 
-降级链（与 modules/stock/services/market_fetcher.py 同一模式：东财主源、baostock 兜底）：
+降级链（与 modules/stock/services/market_fetcher.py 同一模式）：
 - 个股日线：默认 akshare（ak.stock_zh_a_hist，东财，adjust="" 不复权以匹配既有口径）；
-  失败/超时/无数据的票降级 baostock（query_history_k_data_plus，adjustflag="3"）。
-- 交易日历（上证指数日线）：同样 akshare 优先、baostock 兜底。
+  失败/超时/无数据的票降级 baostock（query_history_k_data_plus，adjustflag="3"），
+  仍失败的票由 FQGate（同花顺本机网关，_fqgate.fetch_daily_bars）逐票兜底。
+- 交易日历（上证指数日线）：akshare 优先、baostock 兜底，仍为空由 FQGate
+  用基准股日 K 推导。
 
-超时熔断：
-- akshare 单票 asyncio.wait_for 硬超时（_AKSHARE_STOCK_TIMEOUT），超时的票交 baostock 降级；
-  票间 sleep _AKSHARE_STOCK_DELAY 防东财 push2his IP 级限流。
+限流与熔断统一走 core.datasource.gateway（每源并发/间隔/硬超时/熔断由
+datasource.* 配置驱动，面板可调）：
 - baostock 是全局单连接协议，login/query/logout 必须在同一线程内串行完成，
-  故整批放入一个同步函数经 asyncio.to_thread 执行，外层 asyncio.wait_for
-  给整批一个总时长上限（_BAOSTOCK_BATCH_TIMEOUT）——baostock 服务端挂起时
-  （login 正常但查询无响应）单票无法中途打断，整批超时后未取到的票标记失败，
-  被遗弃的线程随连接泄漏但不阻塞事件循环。
+  故整批放入一个同步函数经网关 to_thread 执行，源配置 timeout_s 给整批总时长
+  上限——baostock 服务端挂起时（login 正常但查询无响应）单票无法中途打断，
+  整批超时后未取到的票标记失败，被遗弃的线程随连接泄漏但不阻塞事件循环。
 
 返回结构保持 {"trading_days", "bars", "failed_codes"} 不变（调用方零改动），
-额外附带 "data_sources"（code -> "akshare_em" | "baostock"）记录每票实际数据源。
+额外附带 "data_sources"（code -> "akshare_em" | "baostock" | "fqgate"）记录每票实际数据源。
 
-股票代码转换：akshare 用纯数字代码；baostock 6->sh、0/3->sz，4/8（北交所）不支持。
+股票代码转换：akshare 用纯数字代码；baostock/FQGate 6->沪、0/3->深，4/8（北交所）不支持。
 """
-import asyncio
 import logging
 import time
 
+from core.datasource.gateway import call_external
 from modules.stock.services._common import num
+from modules.stock.services import _fqgate
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +38,6 @@ _BAR_FIELDS = "date,open,high,low,close,preclose,volume,amount,pctChg"
 # 交易日历基准指数（上证指数）
 _CALENDAR_INDEX = "sh.000001"
 _CALENDAR_INDEX_AK = "sh000001"
-
-# akshare 单票查询硬超时（秒）
-_AKSHARE_STOCK_TIMEOUT = 30
-# akshare 票间间隔（秒），防东财 push2his IP 级限流
-_AKSHARE_STOCK_DELAY = 0.3
-# akshare 交易日历查询硬超时（秒）
-_AKSHARE_CALENDAR_TIMEOUT = 30
-# baostock 降级批整体超时（秒）：当前故障形态为 login 正常、查询挂起，
-# 单票查询无法中途取消，只能给整批一个总上限
-_BAOSTOCK_BATCH_TIMEOUT = 120
 
 
 def to_bs_stock_code(stock_code: str) -> str | None:
@@ -228,13 +219,12 @@ async def fetch_market_data(
             "data_sources": {stock_code: "akshare_em" | "baostock"},
         }
     """
-    # ---- 交易日历：akshare 优先，baostock 兜底 ----
+    # ---- 交易日历：akshare 优先，baostock 兜底，FQGate 末级 ----
     trading_days: list[str] = []
     calendar_source = "akshare_em"
     try:
-        trading_days = await asyncio.wait_for(
-            asyncio.to_thread(_fetch_calendar_akshare, start_date, end_date),
-            timeout=_AKSHARE_CALENDAR_TIMEOUT,
+        trading_days = await call_external(
+            "eastmoney", _fetch_calendar_akshare, start_date, end_date
         )
     except Exception as e:
         logger.warning("akshare 交易日历抓取失败（降级 baostock）: %s", e)
@@ -242,19 +232,14 @@ async def fetch_market_data(
         calendar_source = "baostock"
         logger.warning("akshare 交易日历为空，降级 baostock")
 
-    # ---- 个股日线：akshare 逐票（硬超时），失败票收集交 baostock ----
+    # ---- 个股日线：akshare 逐票（网关统一限流/超时），失败票收集交降级源 ----
     bars: dict[str, list[dict]] = {}
     sources: dict[str, str] = {}
     need_fallback: list[str] = []
-    for i, code in enumerate(stock_codes):
-        if i > 0:
-            await asyncio.sleep(_AKSHARE_STOCK_DELAY)
+    for code in stock_codes:
         try:
-            stock_bars = await asyncio.wait_for(
-                asyncio.to_thread(
-                    _fetch_stock_daily_akshare, code, start_date, end_date
-                ),
-                timeout=_AKSHARE_STOCK_TIMEOUT,
+            stock_bars = await call_external(
+                "eastmoney", _fetch_stock_daily_akshare, code, start_date, end_date
             )
         except Exception as e:
             logger.warning("akshare 个股日线失败（降级 baostock, code=%s）: %s", code, e)
@@ -265,23 +250,22 @@ async def fetch_market_data(
         else:
             need_fallback.append(code)
 
-    # ---- baostock 降级批：整批一个总时长上限，挂起时未取到的票标记失败 ----
+    # ---- baostock 降级批：整批一个总时长上限（走网关 baostock 源配置），挂起时未取到的票标记失败 ----
     failed: list[str] = []
     if need_fallback or calendar_source == "baostock":
         t0 = time.monotonic()
         try:
-            fb = await asyncio.wait_for(
-                asyncio.to_thread(
-                    _fetch_via_baostock,
-                    need_fallback,
-                    start_date,
-                    end_date,
-                    calendar_source == "baostock",
-                ),
-                timeout=_BAOSTOCK_BATCH_TIMEOUT,
+            fb = await call_external(
+                "baostock",
+                _fetch_via_baostock,
+                need_fallback,
+                start_date,
+                end_date,
+                calendar_source == "baostock",
             )
             if fb["trading_days"] is not None:
                 trading_days = fb["trading_days"]
+                calendar_source = "baostock" if trading_days else calendar_source
             for code, stock_bars in fb["bars"].items():
                 bars[code] = stock_bars
                 sources[code] = "baostock"
@@ -296,6 +280,34 @@ async def fetch_market_data(
                 time.monotonic() - t0, type(e).__name__, len(need_fallback), e,
             )
             failed = list(need_fallback)
+
+    # ---- FQGate 末级兜底：本机同花顺网关，逐票补日线；日历仍空时同步补齐 ----
+    if failed or not trading_days:
+        t0 = time.monotonic()
+        fqgate_ok = 0
+        for code in list(failed):
+            try:
+                stock_bars = await _fqgate.fetch_daily_bars(code, start_date, end_date)
+            except Exception as e:
+                logger.warning("FQGate 个股日线兜底失败（code=%s）: %s", code, e)
+                continue
+            if stock_bars:
+                bars[code] = stock_bars
+                sources[code] = "fqgate"
+                failed.remove(code)
+                fqgate_ok += 1
+        if not trading_days:
+            try:
+                trading_days = await _fqgate.fetch_trading_days(start_date, end_date)
+                if trading_days:
+                    calendar_source = "fqgate"
+            except Exception as e:
+                logger.warning("FQGate 交易日历兜底失败: %s", e)
+        if failed or not trading_days:
+            logger.warning(
+                "FQGate 兜底后仍失败 %d 票，日历%s（耗时 %.1fs）",
+                len(failed), "已补齐" if trading_days else "仍为空", time.monotonic() - t0,
+            )
 
     return {
         "trading_days": trading_days,

@@ -160,11 +160,14 @@ class FinancialService:
         """东财 push2 个股信息兜底：一次请求同时取名称与所属行业（主源限流时走延时源）"""
         import httpx
 
+        from core.datasource.gateway import call_external_async
+
         market = "1" if code.startswith(("6", "9", "5")) else "0"
         for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
             try:
                 async with httpx.AsyncClient(timeout=10) as client:
-                    resp = await client.get(
+                    resp = await call_external_async(
+                        "eastmoney", client.get,
                         f"https://{host}/api/qt/stock/get",
                         params={"secid": f"{market}.{code}", "fields": "f57,f58,f127"},
                         headers={"Referer": "https://quote.eastmoney.com/"},

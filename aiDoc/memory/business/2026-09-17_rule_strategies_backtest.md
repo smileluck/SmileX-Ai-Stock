@@ -137,3 +137,15 @@
 - 返回结构 `trading_days`/`bars`/`failed_codes` 完全不变（调用方零改动），**新增 `data_sources` 键**（code → akshare_em/baostock）逐票记录实际数据源；降级逐票 logger.warning
 - 规则执行器经 `factor_calc._fetch_universe_bars → fetch_market_data` 自动获得双源；backtest_runner/factor_calc/rule_executor 中过时注释已同步
 - smoke（/tmp/market_data_smoke_20260918.py + _cb_）：akshare 路径 600519/000001 各 126 bar 出数且 bar 字段不变；mock baostock 挂起验证 15s 整批熔断、票标记失败、不卡死；改造当日东财限流，全部正式跑数实际经 baostock 兜底 60/60 完成
+
+## 行情双源持续故障排查（2026-09-29）
+
+**现象**：用户反馈"策略很多但持仓只有少数策略生效"。排查 dev 库（16 策略全启用全配时段）：当前 holding 仅 4 策略有（高股息红利防御 8、核心资产价值投资 6、低波红利增强 5、研报掘金 2），其余 prompt 策略历史持仓全部 closed 属正常；**rule 型 3 策略（超跌反转/趋势动量/放量突破）近 14 天大面积 failed「截至 YYYY-MM-DD 无可用交易日，无法计算因子」**，放量突破 6 次全败。
+
+**根因（双源同时断，持续多日）**：
+
+- **akshare-东财 push2his 被 IP 级封禁**：单发 curl 也瞬间 Empty reply / RemoteDisconnected（非高频限流，是持续封禁；quote.eastmoney.com 主站 200 正常，仅 K 线接口被拒）。09-28、09-29 全天日志 457 次 RemoteDisconnected。
+- **baostock 再次复现 09-17 故障形态**：login 秒回成功但 query_history_k_data_plus 无限挂起/报"网络接收错误"，09-29 15:10 降级批 60 票全失败、120s 整批超时。
+- 双源皆断 → `trading_days` 为空 → `factor_calc.py:60` 抛"无可用交易日"。
+
+**结论**：rule 策略哑火是行情数据源外部故障，非策略配置/代码缺陷。待修方向：给 `market_data.py` 增加第三源（新浪/腾讯日线，akshare `stock_zh_a_daily`/`stock_zh_a_hist_tx` 不经 push2his），或走代理；prompt 策略的实时报价链路不受影响（market_fetcher 有新浪降级）。

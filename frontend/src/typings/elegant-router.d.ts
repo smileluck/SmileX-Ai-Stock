@@ -60,6 +60,7 @@ declare module "@elegant-router/types" {
     "manage": "/manage";
     "manage_announcement": "/manage/announcement";
     "manage_config": "/manage/config";
+    "manage_datasource": "/manage/datasource";
     "manage_dept": "/manage/dept";
     "manage_dict": "/manage/dict";
     "manage_file": "/manage/file";
@@ -175,6 +176,7 @@ declare module "@elegant-router/types" {
     | "log_operation-log"
     | "manage_announcement"
     | "manage_config"
+    | "manage_datasource"
     | "manage_dept"
     | "manage_dict"
     | "manage_file"

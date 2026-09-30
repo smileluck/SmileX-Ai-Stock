@@ -384,6 +384,16 @@ scheduler:
   log_not_found: "Task log {id} not found"
   cleaned_logs: "Cleaned {count} log(s)"
 
+dataSource:
+  unknown_source: "Unknown data source [{source}]"
+  invalid_base_url: "FQGate base URL must start with http:// or https://"
+  empty_config: "Config content cannot be empty"
+  unknown_field: "Unsupported config field [{field}]"
+  invalid_circuit_mode: "Circuit mode only supports auto / force_open / force_closed"
+  invalid_field: "Invalid value for config field [{field}]"
+  field_out_of_range: "Config field [{field}] is out of range {min} ~ {max}"
+  config_update_success: "Data source config updated"
+
 tenant:
   create_success: "Tenant created successfully"
   update_success: "Tenant updated successfully"
