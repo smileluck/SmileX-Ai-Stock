@@ -298,6 +298,26 @@ export const generatedRoutes: GeneratedRoute[] = [
     ]
   },
   {
+    name: 'env-config',
+    path: '/env-config',
+    component: 'layout.base',
+    meta: {
+      title: 'env-config',
+      i18nKey: 'route.env-config'
+    },
+    children: [
+      {
+        name: 'env-config_datasource',
+        path: '/env-config/datasource',
+        component: 'view.env-config_datasource',
+        meta: {
+          title: 'env-config_datasource',
+          i18nKey: 'route.env-config_datasource'
+        }
+      }
+    ]
+  },
+  {
     name: 'export-record',
     path: '/export-record',
     component: 'layout.base$view.export-record',
@@ -430,15 +450,6 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'manage_config',
           i18nKey: 'route.manage_config'
-        }
-      },
-      {
-        name: 'manage_datasource',
-        path: '/manage/datasource',
-        component: 'view.manage_datasource',
-        meta: {
-          title: 'manage_datasource',
-          i18nKey: 'route.manage_datasource'
         }
       },
       {

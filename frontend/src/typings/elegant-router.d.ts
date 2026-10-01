@@ -47,6 +47,8 @@ declare module "@elegant-router/types" {
     "demo_dict": "/demo/dict";
     "demo_openapi-test": "/demo/openapi-test";
     "demo_upload": "/demo/upload";
+    "env-config": "/env-config";
+    "env-config_datasource": "/env-config/datasource";
     "export-record": "/export-record";
     "home": "/home";
     "iframe-page": "/iframe-page/:url";
@@ -60,7 +62,6 @@ declare module "@elegant-router/types" {
     "manage": "/manage";
     "manage_announcement": "/manage/announcement";
     "manage_config": "/manage/config";
-    "manage_datasource": "/manage/datasource";
     "manage_dept": "/manage/dept";
     "manage_dict": "/manage/dict";
     "manage_file": "/manage/file";
@@ -114,6 +115,7 @@ declare module "@elegant-router/types" {
     | "ai"
     | "business"
     | "demo"
+    | "env-config"
     | "export-record"
     | "home"
     | "iframe-page"
@@ -168,6 +170,7 @@ declare module "@elegant-router/types" {
     | "demo_dict"
     | "demo_openapi-test"
     | "demo_upload"
+    | "env-config_datasource"
     | "export-record"
     | "home"
     | "info_news"
@@ -176,7 +179,6 @@ declare module "@elegant-router/types" {
     | "log_operation-log"
     | "manage_announcement"
     | "manage_config"
-    | "manage_datasource"
     | "manage_dept"
     | "manage_dict"
     | "manage_file"

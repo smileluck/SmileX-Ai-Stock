@@ -13,7 +13,7 @@
       "template": "agents-skills/project-pre-push-checks/SKILL.md"
     },
     "aiDoc/contracts/boundary.md": {
-      "sha256": "3e1bbe8f2a1252fdf80945c8bf5e8960f46dd91c5c2ccf98329b6cf65f70b925",
+      "sha256": "82b398a511a39219706efb226820eb014de1a584e3e3977aa9878cd118675653",
       "template": "aidoc/contracts/boundary.md"
     },
     "aiDoc/frontend/frontend-rules.md": {
