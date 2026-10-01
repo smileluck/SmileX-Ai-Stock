@@ -9,7 +9,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Text, Boolean, Integer, DateTime, UniqueConstraint, JSON
+from sqlalchemy import String, Text, Boolean, Integer, DateTime, UniqueConstraint, JSON, Index, text
 from sqlalchemy.orm import mapped_column, Mapped
 
 from database.models.base import Base
@@ -23,6 +23,14 @@ class BusinessNews(Base):
 
     __table_args__ = (
         UniqueConstraint("url", name="uk_news_url"),
+        # 列表按标题去重（row_number partition by title）的配套索引，见迁移 0047
+        Index(
+            "ix_business_news_dedup",
+            "title",
+            text("published_at DESC NULLS LAST"),
+            text("id DESC"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
         {"comment": "新闻聚合表"},
     )
 
