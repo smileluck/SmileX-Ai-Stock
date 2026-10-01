@@ -397,6 +397,7 @@ const local: App.I18n.Schema = {
     'env-config': '环境配置',
     'env-config_fqgate': 'FQGate 演示',
     'env-config_model': 'LLM配置',
+    'env-config_mcp-server': 'MCP 服务',
     manage_announcement: '通知公告',
     'manage_ip-blacklist': '黑名单管理',
     log: '日志管理',
@@ -1174,6 +1175,33 @@ const local: App.I18n.Schema = {
           taskName: '请输入任务名称',
           status: '请选择执行状态',
           timeRange: '时间范围'
+        }
+      },
+      mcpServer: {
+        title: 'MCP 服务列表',
+        name: '服务名称',
+        code: '服务编码',
+        url: '服务地址',
+        headers: '请求头',
+        enabled: '启用',
+        timeout: '超时(s)',
+        remark: '备注',
+        test: '测试',
+        viewTools: '查看工具',
+        toolsTitle: '工具列表',
+        toolName: '工具名',
+        toolDescription: '描述',
+        addServer: '新增 MCP 服务',
+        editServer: '编辑 MCP 服务',
+        form: {
+          code: '小写字母开头，仅含小写字母/数字/下划线',
+          name: '请输入服务名称',
+          url: 'http(s):// 开头的服务地址',
+          headers: 'JSON 格式请求头，如 {"Authorization": "Bearer xxx"}，可留空',
+          remark: '请输入备注',
+          codeInvalid: '编码需以小写字母开头，仅含小写字母、数字、下划线',
+          urlInvalid: '地址需以 http:// 或 https:// 开头',
+          headersInvalid: '请求头必须是合法的 JSON 对象'
         }
       },
       datasource: {

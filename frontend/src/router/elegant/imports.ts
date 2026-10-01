@@ -44,6 +44,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   demo_upload: () => import("@/views/demo/upload/index.vue"),
   "env-config_datasource": () => import("@/views/env-config/datasource/index.vue"),
   "env-config_fqgate": () => import("@/views/env-config/fqgate/index.vue"),
+  "env-config_mcp-server": () => import("@/views/env-config/mcp-server/index.vue"),
   "env-config_model": () => import("@/views/env-config/model/index.vue"),
   "export-record": () => import("@/views/export-record/index.vue"),
   home: () => import("@/views/home/index.vue"),

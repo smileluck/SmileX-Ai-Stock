@@ -49,6 +49,7 @@ declare module "@elegant-router/types" {
     "env-config": "/env-config";
     "env-config_datasource": "/env-config/datasource";
     "env-config_fqgate": "/env-config/fqgate";
+    "env-config_mcp-server": "/env-config/mcp-server";
     "env-config_model": "/env-config/model";
     "export-record": "/export-record";
     "home": "/home";
@@ -172,6 +173,7 @@ declare module "@elegant-router/types" {
     | "demo_upload"
     | "env-config_datasource"
     | "env-config_fqgate"
+    | "env-config_mcp-server"
     | "env-config_model"
     | "export-record"
     | "home"

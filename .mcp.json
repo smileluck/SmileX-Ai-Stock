@@ -2,6 +2,9 @@
   "mcpServers": {
     "smilex-memory": {
       "url": "http://127.0.0.1:8765/mcp"
+    },
+    "fqgate": {
+      "url": "http://127.0.0.1:17281/mcp"
     }
   }
 }

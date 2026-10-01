@@ -36,6 +36,9 @@ class ToolDefinition:
 
 _REGISTRY: dict[str, ToolDefinition] = {}
 
+# 动态工具（外部 MCP server 工具，每次对话前由 mcp_tools.register_mcp_tools 重建）
+_DYNAMIC: dict[str, ToolDefinition] = {}
+
 
 def register_tool(
     name: str, description: str, parameters: dict
@@ -54,8 +57,26 @@ def register_tool(
     return decorator
 
 
+def register_dynamic_tool(
+    name: str, description: str, parameters: dict, func: Callable[..., Awaitable[Any]]
+) -> None:
+    """注册一个动态工具（外部 MCP server 工具）。"""
+    if name in _REGISTRY:
+        logger.warning("动态工具 [%s] 与内置工具重名，跳过", name)
+        return
+    _DYNAMIC[name] = ToolDefinition(
+        name=name, description=description, parameters=parameters, func=func
+    )
+    logger.debug("注册动态工具: %s", name)
+
+
+def clear_dynamic_tools() -> None:
+    """清空动态工具（每次对话前重建）。"""
+    _DYNAMIC.clear()
+
+
 def get_openai_format() -> list[dict]:
-    """返回所有已注册工具的 OpenAI Function Calling 格式描述。"""
+    """返回所有已注册工具（内置 + 动态）的 OpenAI Function Calling 格式描述。"""
     return [
         {
             "type": "function",
@@ -65,7 +86,7 @@ def get_openai_format() -> list[dict]:
                 "parameters": tool.parameters,
             },
         }
-        for tool in _REGISTRY.values()
+        for tool in (*_REGISTRY.values(), *_DYNAMIC.values())
     ]
 
 
@@ -80,18 +101,25 @@ async def execute(
 
     异常会被捕获并转为 {"error": ...}，保证 LLM 能收到错误反馈而不是中断对话。
     """
-    tool = _REGISTRY.get(name)
+    tool = _REGISTRY.get(name) or _DYNAMIC.get(name)
     if not tool:
         logger.warning("未注册的工具: %s", name)
         return {"error": f"工具 {name} 不存在"}
 
-    # 过滤出函数实际接受的参数（排除 db）
+    # 过滤出函数实际接受的参数（排除 db）；
+    # 动态工具（MCP 闭包）签名为 (db, **kwargs)，透传全部参数
     sig = inspect.signature(tool.func)
-    valid_params = {
-        k: v
-        for k, v in arguments.items()
-        if k in sig.parameters and k != "db"
-    }
+    has_var_kwargs = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    )
+    if has_var_kwargs:
+        valid_params = {k: v for k, v in arguments.items() if k != "db"}
+    else:
+        valid_params = {
+            k: v
+            for k, v in arguments.items()
+            if k in sig.parameters and k != "db"
+        }
 
     try:
         result = await tool.func(db, **valid_params)

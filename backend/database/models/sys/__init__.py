@@ -17,6 +17,7 @@ from .scheduled_task import SysScheduledTask
 from .task_log import SysScheduledTaskLog
 from .ai_model import SysAiModel, SysAiModelBinding, AiProviderEnum, AiFunctionEnum
 from .data_source import SysDataSourceStat
+from .mcp_server import SysMcpServer
 
 __all__ = [
     "SysMenu",
@@ -40,4 +41,5 @@ __all__ = [
     "AiProviderEnum",
     "AiFunctionEnum",
     "SysDataSourceStat",
+    "SysMcpServer",
 ]

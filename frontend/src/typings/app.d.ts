@@ -1295,6 +1295,33 @@ declare namespace App {
               timeRange: string;
             };
           };
+          mcpServer: {
+            title: string;
+            name: string;
+            code: string;
+            url: string;
+            headers: string;
+            enabled: string;
+            timeout: string;
+            remark: string;
+            test: string;
+            viewTools: string;
+            toolsTitle: string;
+            toolName: string;
+            toolDescription: string;
+            addServer: string;
+            editServer: string;
+            form: {
+              code: string;
+              name: string;
+              url: string;
+              headers: string;
+              remark: string;
+              codeInvalid: string;
+              urlInvalid: string;
+              headersInvalid: string;
+            };
+          };
           datasource: {
             title: string;
             name: string;

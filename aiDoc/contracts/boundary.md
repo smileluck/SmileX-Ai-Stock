@@ -1,4 +1,4 @@
-<!-- last-updated: 2026-09-29 -->
+<!-- last-updated: 2026-10-01 -->
 # 前后端边界与数据契约
 
 ## 责任边界
@@ -541,3 +541,16 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - FQGate（source_key `fqgate`）为本机同花顺行情网关（默认 `http://127.0.0.1:17281`，无鉴权），作为日线/日历/实时报价的全链路兜底源：market_data（东财→baostock→FQGate）、market_fetcher（指数实时 东财→新浪→FQGate→baostock，指数历史末级 FQGate）、quote_helper（新浪→FQGate）；未运行时连接被拒自动降级跳过；FQGate ≥v1.0.5 日 K 请求日期必须为 YYYYMMDD 紧凑格式（YYYY-MM-DD 报 1003），适配层 `_fqgate.py` 已转换
 - 菜单迁移 0043：MENU `manage_datasource`（id 8038）+ BUTTON `datasource:list/config/test`（8039-8041）；0044/0045 新建「环境配置」CATALOG 并提为根级；**0046 现态**：根级目录 `env-config`（/env-config，layout.base）→ 菜单 `env-config_datasource`（path `/env-config/datasource`，component `view.env-config_datasource`）。约定：根级 CATALOG name 不含 "_"（transform 据此判断一级路由）且 component=`layout.base`，子级目录 component 必须 NULL；i18n route 键受 I18nRouteKey（由 views 目录生成）约束，目录须有同名 views 目录否则 typecheck TS2353
 - 前端 API：`frontend/src/service/api/datasource.ts`，类型 `Api.DataSource.*`（`frontend/src/typings/api/datasource.d.ts`）；页面 `views/env-config/datasource/`（FQGate 网关卡片 + 源状态表 + 配置 Drawer + 失败事件弹窗 + 近 7 天用量 ECharts，30s 自动刷新）；i18n `page.manage.datasource.*`
+
+---
+
+## MCP 服务管理模块契约（2026-10-01，迁移 0051）
+
+- 前缀 `/admin/mcp-server`（避开已有的 `/admin/sys/mcp/*`）；权限码：`mcp:list`（查询）、`mcp:manage`（增删改/启停）、`mcp:test`（连通性测试/工具列表）
+- 表 `sys_mcp_server`：`code`（唯一，小写字母开头+小写字母/数字/下划线，作工具命名空间，创建后不可改）、`name`、`url`（Streamable HTTP 端点，http/https 前缀校验）、`headers`（JSON 可空）、`enabled`、`timeout_s`（1-300，默认 30）、`remark` + 标准审计列
+- 接口：`GET /list`（分页，name/code/enabled 筛选）、`POST /add`、`PUT /{id}`（部分字段，code 不可改）、`PUT /{id}/status`、`DELETE /{id}`（硬删，同 ai_model 口径）、`POST /{id}/test` → `{success, latency_ms, message, tool_count}`（失败也走 success 包裹）、`GET /{id}/tools` → `[{name, description, input_schema}]`（实时向 server 查询）
+- `core/mcp/client.py`：Streamable HTTP 短连接薄封装（每次操作 initialize→执行→关闭），`list_tools` 返回 `McpServerTools{tools, instructions, server_name, server_version}`，`call_tool` 返回 `{text(≤8000字符截断), structured, is_error}`，统一 `asyncio.wait_for` 超时
+- Agent 动态工具：`modules/agent/tools/mcp_tools.py` 每次对话前 `register_mcp_tools(db)` —— 查启用 server → TTL 300s 进程内缓存 tools/list → 注册动态工具，命名 `mcp__<code>__<工具名>`（去掉与 code 重复的前缀，如 `fqgate_market_klines` → `mcp__fqgate__market_klines`）；单 server 失败只跳过不阻塞对话；server instructions 拼进 system prompt「外部数据源使用规则」段
+- `tool_registry.py` 动态工具支持：`_DYNAMIC` 字典 + `register_dynamic_tool`/`clear_dynamic_tools`；`execute()` 内置+动态合并查找；动态工具闭包签名 `(db, **kwargs)`（VAR_KEYWORD 时透传全部参数，db 注入后忽略）
+- 种子：FQGate（id 2942406616008048，code=fqgate，url=http://127.0.0.1:17281/mcp，enabled）；菜单 MENU `env-config_mcp-server`（id 8044，parent=env-config 目录 8042，sort 86，icon mdi:server-network）+ BUTTON `mcp:list/manage/test`（8045-8047）
+- 前端 API：`frontend/src/service/api/mcp-server.ts`，类型 `Api.McpServer.*`（`frontend/src/typings/api/mcp-server.d.ts`）；页面 `views/env-config/mcp-server/`（列表+启停开关+测试+查看工具 Modal+编辑抽屉）；i18n `page.manage.mcpServer.*`，route 键 `route.env-config_mcp-server`

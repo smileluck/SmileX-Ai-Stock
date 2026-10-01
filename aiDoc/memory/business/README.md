@@ -10,6 +10,7 @@
 
 ## 需求索引
 
+- [2026-10-01 应用内接入 FQGate MCP + 「MCP 服务」管理页](./2026-10-01_mcp_server_management.md) — 新表 sys_mcp_server + 新模块 modules/mcpserver（/admin/mcp-server，权限 mcp:*）+ core/mcp/client.py 短连接薄封装 + Agent 动态工具（tool_registry _DYNAMIC、mcp_tools.py TTL300s 缓存、命名 mcp__code__tool、instructions 进 system prompt）；迁移 0051（种子 FQGate + 菜单 8044-8047）；坑：FastAPI 拒绝空前缀+空路径（创建用 /add）
 - [2026-10-01 每日资讯分析「长期主线」+ 主线 Tab + 因子处理](./2026-10-01_news_mainline_and_factor.md) — business_news 加 mainline_tags（迁移 0050）+ tagger MAINLINE_RULES 六主线（半导体/光通信/房地产/厄尔尼诺/美联储/地缘冲突）+ 回填 35602 条；news/morning prompt 产出 parsed_result.mainlines（素材按主线分组注入、可降级摘除）；新接口 GET /admin/analysis/news/mainlines（注册表全量返回）；前端第三 tab「主线」；因子 DSL 新字段 mainline_heat（个股→板块→主题→主线反查近5日计数，calc/screen/rule_executor 接线，回测按 0+warning）；坑：locale 新键必须同步 typings/app.d.ts Schema；LLM JSON 字符串内英文双引号曾致解析失败→prompt 加 JSON 纪律
 - [2026-10-01 「环境配置」目录新增 FQGate 演示外部页面](./2026-10-01_fqgate_demo_menu.md) — 迁移 0049（菜单 env-config_fqgate，iframe 内嵌 https://fqgate.github.io/demo/）；**meta_href 外链方案被否**：component NULL 仅守卫 window.open + i18n 键不在生成类型内显示原始键名
 - [2026-10-01 LLM配置菜单移入「环境配置」目录](./2026-10-01_llm_config_menu_to_env_config.md) — 迁移 0048（菜单 2942406616007001 挂到 env-config CATALOG，name ai_model→env-config_model，按钮权限串 sys:ai_model:* 不动）+ 视图 git mv views/ai/model→views/env-config/model（elegant-router 自动重生成）+ locale 键 route.ai_model→route.env-config_model

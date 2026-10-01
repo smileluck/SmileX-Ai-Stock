@@ -394,6 +394,12 @@ dataSource:
   field_out_of_range: "Config field [{field}] is out of range {min} ~ {max}"
   config_update_success: "Data source config updated"
 
+mcpServer:
+  not_found: "MCP server {id} not found"
+  code_exist: "Server code already exists"
+  invalid_code: "Server code only supports lowercase letters, digits and underscores"
+  invalid_url: "MCP endpoint must start with http:// or https://"
+
 tenant:
   create_success: "Tenant created successfully"
   update_success: "Tenant updated successfully"

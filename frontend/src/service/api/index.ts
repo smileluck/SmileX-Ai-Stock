@@ -25,3 +25,4 @@ export * from './backtest';
 export * from './factor';
 export * from './agent-chat';
 export * from './demo';
+export * from './mcp-server';

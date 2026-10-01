@@ -316,6 +316,15 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'env-config_mcp-server',
+        path: '/env-config/mcp-server',
+        component: 'view.env-config_mcp-server',
+        meta: {
+          title: 'env-config_mcp-server',
+          i18nKey: 'route.env-config_mcp-server'
+        }
+      },
+      {
         name: 'env-config_model',
         path: '/env-config/model',
         component: 'view.env-config_model',

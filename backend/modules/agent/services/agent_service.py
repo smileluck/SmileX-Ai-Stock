@@ -44,6 +44,9 @@ SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的智能分析助手，专注�
 - get_limit_up_stocks: 涨停股池（连板数、涨停原因）
 - get_latest_news: 最新财经新闻
 
+此外可能有以 mcp__<服务编码>__ 开头的外部 MCP 服务工具（如 mcp__fqgate__quote 实时报价、
+mcp__fqgate__klines K线数据），来自「环境配置 → MCP 服务」中启用的服务，可按需调用。
+
 回答规范：
 1. 回答用户问题前，优先调用工具获取真实数据，不要凭空编造数据
 2. 数据不足时明确告知用户缺少哪些数据
@@ -90,10 +93,22 @@ class AgentService:
             yield _sse_event("error", message=f"解析模型失败: {e}")
             return
 
+        # 注册外部 MCP server 的动态工具（失败不阻塞对话）
+        mcp_instructions: list[str] = []
+        try:
+            from modules.agent.tools.mcp_tools import register_mcp_tools
+
+            mcp_instructions = await register_mcp_tools(db)
+        except Exception:
+            logger.exception("MCP 动态工具注册失败，继续使用内置工具")
+
         # 注入系统提示词（放在最前，用户自带 system 消息则不覆盖）
+        system_prompt = SYSTEM_PROMPT
+        if mcp_instructions:
+            system_prompt += "\n外部数据源使用规则：\n" + "\n".join(mcp_instructions) + "\n"
         chat_messages = list(messages)
         if not chat_messages or chat_messages[0].get("role") != "system":
-            chat_messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
+            chat_messages.insert(0, {"role": "system", "content": system_prompt})
 
         tools = get_openai_format()
 

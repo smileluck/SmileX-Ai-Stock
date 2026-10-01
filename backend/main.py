@@ -29,6 +29,7 @@ from modules.macro.router import router as macro_router
 from modules.financial.router import router as financial_router
 from modules.research.router import router as research_router
 from modules.datasource.router import router as datasource_router
+from modules.mcpserver.router import router as mcpserver_router
 from modules.demo.router import router as demo_router
 from modules.admin.endpoints.sys.health import health_router
 from core.registry.setup_registry import setup_app
@@ -185,6 +186,8 @@ app.include_router(financial_router)
 app.include_router(research_router)
 # 数据源管理模块（出站限流/熔断配置 + 用量统计 + FQGate 网关管理）
 app.include_router(datasource_router)
+# MCP 服务管理模块（外部 MCP server 配置 + 连通性测试 + Agent 动态工具来源）
+app.include_router(mcpserver_router)
 # 示例模块（akshare / Baostock SDK 简单调用演示）
 app.include_router(demo_router)
 # 开放API（商户 HMAC 签名鉴权）

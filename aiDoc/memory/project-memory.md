@@ -17,6 +17,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-10-01 应用内接入 FQGate MCP + 「MCP 服务」管理页](./business/2026-10-01_mcp_server_management.md) — 新表 sys_mcp_server + /admin/mcp-server（mcp:* 权限）+ core/mcp 短连接客户端 + Agent 动态工具（mcp__code__tool 命名、TTL300s 缓存、instructions 进 system prompt）；迁移 0051；实测 Agent 对话成功调用 FQGate 查茅台实时价
 - [2026-10-01 每日资讯分析「长期主线」+ 主线 Tab + 因子处理](./business/2026-10-01_news_mainline_and_factor.md) — 迁移 0050 mainline_tags + 六主线打标/回填；news/morning 产出 parsed_result.mainlines；新接口 /news/mainlines；前端主线 tab；因子 DSL 新字段 mainline_heat（calc/screen/rule_executor 接线，回测按 0）
 - [2026-10-01 LLM配置菜单移入「环境配置」+ 新增 FQGate 演示页](./business/2026-10-01_llm_config_menu_to_env_config.md) — 迁移 0048（ai_model→env-config_model，按钮权限串不动）+ 视图迁至 views/env-config/model；迁移 0049 新增 env-config_fqgate iframe 内嵌外部页（meta_href 外链方案因 i18n 键类型问题被否）
 - [2026-09-29 数据源网关 + FQGate 接入 + 数据源管理面板](./business/2026-09-29_datasource_gateway_fqgate.md) — 新核心层 `core/datasource/` 统一出站网关（并发+间隔+超时+熔断+统计，sys_config `datasource.*` 配置）+ FQGate 本机同花顺网关作全链路兜底源（日K/日历/报价，未运行自动降级）+ 新模块 /admin/datasource 面板（源状态/配置/失败事件/用量图）+ 迁移 0042/0043；起因=东财 push2his IP 封禁+baostock 挂起

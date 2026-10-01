@@ -401,6 +401,7 @@ const local: App.I18n.Schema = {
     'env-config': 'Environment Config',
     'env-config_fqgate': 'FQGate Demo',
     'env-config_model': 'LLM Config',
+    'env-config_mcp-server': 'MCP Servers',
     manage_announcement: 'Announcement',
     'manage_ip-blacklist': 'IP Blacklist',
     log: 'Log Management',
@@ -1181,6 +1182,33 @@ const local: App.I18n.Schema = {
           taskName: 'Enter task name',
           status: 'Select status',
           timeRange: 'Time Range'
+        }
+      },
+      mcpServer: {
+        title: 'MCP Servers',
+        name: 'Name',
+        code: 'Code',
+        url: 'URL',
+        headers: 'Headers',
+        enabled: 'Enabled',
+        timeout: 'Timeout(s)',
+        remark: 'Remark',
+        test: 'Test',
+        viewTools: 'Tools',
+        toolsTitle: 'Tool List',
+        toolName: 'Tool',
+        toolDescription: 'Description',
+        addServer: 'Add MCP Server',
+        editServer: 'Edit MCP Server',
+        form: {
+          code: 'Starts with a lowercase letter; lowercase letters, digits and underscores only',
+          name: 'Please enter server name',
+          url: 'Server URL starting with http(s)://',
+          headers: 'JSON headers, e.g. {"Authorization": "Bearer xxx"}, optional',
+          remark: 'Please enter remark',
+          codeInvalid: 'Code must start with a lowercase letter and contain only lowercase letters, digits and underscores',
+          urlInvalid: 'URL must start with http:// or https://',
+          headersInvalid: 'Headers must be a valid JSON object'
         }
       },
       datasource: {
