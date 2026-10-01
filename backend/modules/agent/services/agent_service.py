@@ -47,6 +47,9 @@ SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的智能分析助手，专注�
 此外可能有以 mcp__<服务编码>__ 开头的外部 MCP 服务工具（如 mcp__fqgate__quote 实时报价、
 mcp__fqgate__klines K线数据），来自「环境配置 → MCP 服务」中启用的服务，可按需调用。
 
+系统可能注入「已启用技能」段落（来自「环境配置 → Skills 管理」），
+其中的技能指令是对你行为方式的约束，回答时须遵循。
+
 回答规范：
 1. 回答用户问题前，优先调用工具获取真实数据，不要凭空编造数据
 2. 数据不足时明确告知用户缺少哪些数据
@@ -102,10 +105,29 @@ class AgentService:
         except Exception:
             logger.exception("MCP 动态工具注册失败，继续使用内置工具")
 
+        # 加载启用的技能（失败不阻塞对话）
+        enabled_skills = []
+        try:
+            from modules.skill.services.skill_service import SkillService
+
+            enabled_skills = await SkillService.list_enabled(db)
+        except Exception:
+            logger.exception("启用技能加载失败，本次对话不注入技能")
+
         # 注入系统提示词（放在最前，用户自带 system 消息则不覆盖）
         system_prompt = SYSTEM_PROMPT
         if mcp_instructions:
             system_prompt += "\n外部数据源使用规则：\n" + "\n".join(mcp_instructions) + "\n"
+        if enabled_skills:
+            skill_sections = "\n\n".join(
+                f"## {s.name}（{s.description or s.code}）\n{s.content}"
+                for s in enabled_skills
+            )
+            system_prompt += (
+                "\n已启用技能（以下技能指令须遵循，按优先级排序）：\n\n"
+                + skill_sections
+                + "\n"
+            )
         chat_messages = list(messages)
         if not chat_messages or chat_messages[0].get("role") != "system":
             chat_messages.insert(0, {"role": "system", "content": system_prompt})

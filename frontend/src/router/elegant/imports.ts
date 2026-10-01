@@ -46,6 +46,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   "env-config_fqgate": () => import("@/views/env-config/fqgate/index.vue"),
   "env-config_mcp-server": () => import("@/views/env-config/mcp-server/index.vue"),
   "env-config_model": () => import("@/views/env-config/model/index.vue"),
+  "env-config_skill": () => import("@/views/env-config/skill/index.vue"),
   "export-record": () => import("@/views/export-record/index.vue"),
   home: () => import("@/views/home/index.vue"),
   info_news: () => import("@/views/info/news/index.vue"),

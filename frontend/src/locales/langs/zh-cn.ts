@@ -398,6 +398,7 @@ const local: App.I18n.Schema = {
     'env-config_fqgate': 'FQGate 演示',
     'env-config_model': 'LLM配置',
     'env-config_mcp-server': 'MCP 服务',
+    'env-config_skill': 'Skills 管理',
     manage_announcement: '通知公告',
     'manage_ip-blacklist': '黑名单管理',
     log: '日志管理',
@@ -1204,10 +1205,30 @@ const local: App.I18n.Schema = {
           headersInvalid: '请求头必须是合法的 JSON 对象'
         }
       },
+      skill: {
+        title: '技能列表',
+        name: '技能名称',
+        code: '技能编码',
+        content: '指令内容',
+        description: '描述',
+        status: '状态',
+        sort: '排序',
+        updateTime: '更新时间',
+        addSkill: '新增技能',
+        editSkill: '编辑技能',
+        form: {
+          code: '小写字母开头，仅含小写字母/数字/下划线',
+          name: '请输入技能名称',
+          content: '技能指令内容，启用后注入 Agent 系统提示词',
+          description: '请输入技能描述',
+          codeInvalid: '编码需以小写字母开头，仅含小写字母、数字、下划线'
+        }
+      },
       datasource: {
         title: '数据源列表',
         name: '数据源名称',
         category: '分类',
+        capabilities: '支持能力',
         enabled: '启用状态',
         circuitState: '熔断状态',
         circuitStates: {

@@ -400,6 +400,11 @@ mcpServer:
   invalid_code: "Server code only supports lowercase letters, digits and underscores"
   invalid_url: "MCP endpoint must start with http:// or https://"
 
+skill:
+  not_found: "Skill {id} not found"
+  code_exist: "Skill code already exists"
+  invalid_code: "Skill code only supports lowercase letters, digits and underscores"
+
 tenant:
   create_success: "Tenant created successfully"
   update_success: "Tenant updated successfully"

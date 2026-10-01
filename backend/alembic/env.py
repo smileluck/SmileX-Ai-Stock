@@ -90,6 +90,8 @@ from database.models.sys.permission import SysPermission
 from database.models.sys.scheduled_task import SysScheduledTask
 from database.models.sys.task_log import SysScheduledTaskLog
 from database.models.sys.data_source import SysDataSourceStat
+from database.models.sys.mcp_server import SysMcpServer
+from database.models.sys.skill import SysSkill
 
 # Set target_metadata to Base.metadata
 target_metadata = Base.metadata

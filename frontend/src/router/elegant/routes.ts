@@ -332,6 +332,15 @@ export const generatedRoutes: GeneratedRoute[] = [
           title: 'env-config_model',
           i18nKey: 'route.env-config_model'
         }
+      },
+      {
+        name: 'env-config_skill',
+        path: '/env-config/skill',
+        component: 'view.env-config_skill',
+        meta: {
+          title: 'env-config_skill',
+          i18nKey: 'route.env-config_skill'
+        }
       }
     ]
   },

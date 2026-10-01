@@ -197,6 +197,7 @@ const routeMap: RouteMap = {
   "env-config_fqgate": "/env-config/fqgate",
   "env-config_mcp-server": "/env-config/mcp-server",
   "env-config_model": "/env-config/model",
+  "env-config_skill": "/env-config/skill",
   "export-record": "/export-record",
   "home": "/home",
   "iframe-page": "/iframe-page/:url",

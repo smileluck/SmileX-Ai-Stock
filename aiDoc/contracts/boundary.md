@@ -529,7 +529,7 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 
 - 前缀 `/admin/datasource`；权限码：`datasource:list`（查询）、`datasource:config`（改配置/启停/手动熔断）、`datasource:test`（FQGate 连通性测试）
 - 接口：
-  - `GET /list` → `[{key, name, category, description, config: {enabled, max_concurrency, min_interval_ms, timeout_s, circuit_mode, circuit_failure_threshold, circuit_recovery_s}, runtime: {circuit_state, consecutive_failures, in_flight, last_error, last_error_at}, today: {total_calls, failed_calls, rejected_calls, success_rate, avg_latency_ms}}]`；`circuit_mode: auto|force_open|force_closed`（auto=自动熔断；force_open=手动熔断拒绝一切外呼；force_closed=手动恢复强制可用）；`circuit_state: closed|half_open|open`
+  - `GET /list` → `[{key, name, category, capabilities, description, config: {enabled, max_concurrency, min_interval_ms, timeout_s, circuit_mode, circuit_failure_threshold, circuit_recovery_s}, runtime: {circuit_state, consecutive_failures, in_flight, last_error, last_error_at}, today: {total_calls, failed_calls, rejected_calls, success_rate, avg_latency_ms}}]`；`circuit_mode: auto|force_open|force_closed`（auto=自动熔断；force_open=手动熔断拒绝一切外呼；force_closed=手动恢复强制可用）；`circuit_state: closed|half_open|open`；**（2026-10-01 追加）`capabilities: [{key, label}]` 为数据源支持能力清单**——FQGate 由 `core/fqgate/capabilities.py` 的 CAPABILITY_GROUPS（17 组）生成，其余源在 `core/datasource/registry.py` 人工归纳；前端源状态表「支持能力」列 NTag 展示、超 3 个折叠 NPopover
   - `POST /config/update`：body `{source_key, enabled?, max_concurrency?, min_interval_ms?, timeout_s?, circuit_mode?, ...}`，仅传字段生效；保存后清运行态（熔断计数归零）+ invalidate 配置缓存即时生效
   - `POST /fqgate/config`：body `{base_url}`（保存 FQGate 网关地址，sys_config key `datasource.fqgate_gateway`）
   - `GET /stats?days=7` → `[{source_key, stat_hour, total_calls, failed_calls, rejected_calls, avg_latency_ms}]`（库表 `sys_data_source_stat`，按小时聚合）
@@ -539,6 +539,7 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 配置存 sys_config 表（group=`network`，key 前缀 `datasource.<source_key>`，value 为 JSON ≤255 字符），30s 进程内缓存（调用路径不回源，靠调度任务 `datasource.stats_flush` 每 60s 刷新 + 面板保存时 invalidate）
 - 统计口径：熔断/禁用拒绝计 `rejected_calls` 不计失败（未真正外呼）；失败含超时/异常；`flush_to_db()` 60s 刷盘、每日 3 点清理 30 天前
 - FQGate（source_key `fqgate`）为本机同花顺行情网关（默认 `http://127.0.0.1:17281`，无鉴权），作为日线/日历/实时报价的全链路兜底源：market_data（东财→baostock→FQGate）、market_fetcher（指数实时 东财→新浪→FQGate→baostock，指数历史末级 FQGate）、quote_helper（新浪→FQGate）；未运行时连接被拒自动降级跳过；FQGate ≥v1.0.5 日 K 请求日期必须为 YYYYMMDD 紧凑格式（YYYY-MM-DD 报 1003），适配层 `_fqgate.py` 已转换
+- **（2026-10-01 追加）`core/fqgate/` 独立服务包**：按 FQGate OpenAPI v1.0.5 全量封装 17 组约 100 端点——`client.py`（post/get/delete，统一信封 code!=0 抛错、field_value/flatten_records 解包工具、共享 client 复用）、`capabilities.py`（CAPABILITY_GROUPS 能力元数据唯一真源）、分组模块 calendar/catalog/session/auction/kline/tick/financial/tas/information/level2/rankings/options/realtime/selection/topics + `stream.py`（ws_url() 给出 WebSocket 地址、short_line_events() SSE 异步迭代器，低级流式能力）；除已验证链路外各函数直接返回信封 data 不做业务字段映射；`modules/stock/services/_fqgate.py` 降为 A 股业务薄适配层（对外签名不变：resolve_security/to_fq_security/health/fetch_daily_bars(_by_security)/fetch_trading_days/fetch_quotes_by_securities/fetch_spot_quotes），交易日历改用 `/v1/market/calendar/trading-days` 专用接口、600519 日K 推导留作降级；调用方 market_data/market_fetcher/quote_helper/datasource_service 零改动
 - 菜单迁移 0043：MENU `manage_datasource`（id 8038）+ BUTTON `datasource:list/config/test`（8039-8041）；0044/0045 新建「环境配置」CATALOG 并提为根级；**0046 现态**：根级目录 `env-config`（/env-config，layout.base）→ 菜单 `env-config_datasource`（path `/env-config/datasource`，component `view.env-config_datasource`）。约定：根级 CATALOG name 不含 "_"（transform 据此判断一级路由）且 component=`layout.base`，子级目录 component 必须 NULL；i18n route 键受 I18nRouteKey（由 views 目录生成）约束，目录须有同名 views 目录否则 typecheck TS2353
 - 前端 API：`frontend/src/service/api/datasource.ts`，类型 `Api.DataSource.*`（`frontend/src/typings/api/datasource.d.ts`）；页面 `views/env-config/datasource/`（FQGate 网关卡片 + 源状态表 + 配置 Drawer + 失败事件弹窗 + 近 7 天用量 ECharts，30s 自动刷新）；i18n `page.manage.datasource.*`
 
@@ -554,3 +555,12 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - `tool_registry.py` 动态工具支持：`_DYNAMIC` 字典 + `register_dynamic_tool`/`clear_dynamic_tools`；`execute()` 内置+动态合并查找；动态工具闭包签名 `(db, **kwargs)`（VAR_KEYWORD 时透传全部参数，db 注入后忽略）
 - 种子：FQGate（id 2942406616008048，code=fqgate，url=http://127.0.0.1:17281/mcp，enabled）；菜单 MENU `env-config_mcp-server`（id 8044，parent=env-config 目录 8042，sort 86，icon mdi:server-network）+ BUTTON `mcp:list/manage/test`（8045-8047）
 - 前端 API：`frontend/src/service/api/mcp-server.ts`，类型 `Api.McpServer.*`（`frontend/src/typings/api/mcp-server.d.ts`）；页面 `views/env-config/mcp-server/`（列表+启停开关+测试+查看工具 Modal+编辑抽屉）；i18n `page.manage.mcpServer.*`，route 键 `route.env-config_mcp-server`
+
+## Skills 管理模块契约（2026-10-01，迁移 0052）
+
+- 前缀 `/admin/skill`；权限码：`skill:list`（查询）、`skill:manage`（增删改/启停）
+- 表 `sys_skill`：`code`（唯一，小写字母开头+小写字母/数字/下划线，创建后不可改）、`name`、`content`（Text，技能指令正文）、`description`（可空）、`status`（bool，走标准 "1"/"2" 桥接）、`sort`（0-9999，注入提示词优先级）+ 标准审计列
+- 接口：`GET /list`（分页，name/code 模糊 + status 筛选）、`POST /add`、`PUT /{id}`（部分字段，code 不可改）、`PUT /{id}/status`、`DELETE /{id}`；错误沿用 NotFoundError/ConflictError + i18n（`skill.*` 段），未新增 CustomErrorCode 号段
+- Agent 联动：`agent_service.run_agent_stream` 在 MCP 动态工具注册后调 `SkillService.list_enabled(db)`（status=True，sort 升序），以「已启用技能」段落（`## {name}（{description}）\n{content}`）拼入 system prompt；加载失败只记日志不阻塞对话；仅作用于 Agent 聊天，strategy/analysis 独立 prompt 不注入
+- 种子：菜单 MENU `env-config_skill`（id 8049，parent=env-config 目录 8042，sort 87，icon mdi:brain）+ BUTTON `skill:list/manage`（8050/8051），仅插菜单不分配角色
+- 前端 API：`frontend/src/service/api/skill.ts`，类型 `Api.Skill.*`（`frontend/src/typings/api/skill.d.ts`）；页面 `views/env-config/skill/`（列表+行内启停开关+编辑抽屉，照搬 mcp-server 页模式）；i18n `page.manage.skill.*`，route 键 `route.env-config_skill`

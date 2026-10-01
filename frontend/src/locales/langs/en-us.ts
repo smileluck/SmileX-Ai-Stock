@@ -402,6 +402,7 @@ const local: App.I18n.Schema = {
     'env-config_fqgate': 'FQGate Demo',
     'env-config_model': 'LLM Config',
     'env-config_mcp-server': 'MCP Servers',
+    'env-config_skill': 'Skills',
     manage_announcement: 'Announcement',
     'manage_ip-blacklist': 'IP Blacklist',
     log: 'Log Management',
@@ -1211,10 +1212,30 @@ const local: App.I18n.Schema = {
           headersInvalid: 'Headers must be a valid JSON object'
         }
       },
+      skill: {
+        title: 'Skill List',
+        name: 'Name',
+        code: 'Code',
+        content: 'Instruction',
+        description: 'Description',
+        status: 'Status',
+        sort: 'Sort',
+        updateTime: 'Updated At',
+        addSkill: 'Add Skill',
+        editSkill: 'Edit Skill',
+        form: {
+          code: 'Starts with a lowercase letter; lowercase letters, digits and underscores only',
+          name: 'Please enter skill name',
+          content: 'Skill instruction injected into the Agent system prompt when enabled',
+          description: 'Please enter skill description',
+          codeInvalid: 'Code must start with a lowercase letter and contain only lowercase letters, digits and underscores'
+        }
+      },
       datasource: {
         title: 'Data Sources',
         name: 'Name',
         category: 'Category',
+        capabilities: 'Capabilities',
         enabled: 'Enabled',
         circuitState: 'Circuit State',
         circuitStates: {

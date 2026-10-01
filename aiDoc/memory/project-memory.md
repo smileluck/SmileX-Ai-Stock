@@ -16,6 +16,7 @@
 ## 业务需求记忆
 
 详细索引见 [business/README.md](./business/README.md)。近期：
+- [2026-10-01 Skills 管理（AI 助手技能包）](./business/2026-10-01_skill_management.md) — 新表 sys_skill + /admin/skill（skill:list/manage）+ 迁移 0052 菜单种子 + Agent 对话注入启用技能进 system prompt；前端 env-config/skill 页
 
 - [2026-10-01 应用内接入 FQGate MCP + 「MCP 服务」管理页](./business/2026-10-01_mcp_server_management.md) — 新表 sys_mcp_server + /admin/mcp-server（mcp:* 权限）+ core/mcp 短连接客户端 + Agent 动态工具（mcp__code__tool 命名、TTL300s 缓存、instructions 进 system prompt）；迁移 0051；实测 Agent 对话成功调用 FQGate 查茅台实时价
 - [2026-10-01 每日资讯分析「长期主线」+ 主线 Tab + 因子处理](./business/2026-10-01_news_mainline_and_factor.md) — 迁移 0050 mainline_tags + 六主线打标/回填；news/morning 产出 parsed_result.mainlines；新接口 /news/mainlines；前端主线 tab；因子 DSL 新字段 mainline_heat（calc/screen/rule_executor 接线，回测按 0）

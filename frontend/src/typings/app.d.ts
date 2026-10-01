@@ -1322,10 +1322,30 @@ declare namespace App {
               headersInvalid: string;
             };
           };
+          skill: {
+            title: string;
+            name: string;
+            code: string;
+            content: string;
+            description: string;
+            status: string;
+            sort: string;
+            updateTime: string;
+            addSkill: string;
+            editSkill: string;
+            form: {
+              code: string;
+              name: string;
+              content: string;
+              description: string;
+              codeInvalid: string;
+            };
+          };
           datasource: {
             title: string;
             name: string;
             category: string;
+            capabilities: string;
             enabled: string;
             circuitState: string;
             circuitStates: {

@@ -407,6 +407,11 @@ mcpServer:
   invalid_code: "服务编码仅支持小写字母、数字、下划线"
   invalid_url: "MCP 端点必须以 http:// 或 https:// 开头"
 
+skill:
+  not_found: "技能 {id} 不存在"
+  code_exist: "技能编码已存在"
+  invalid_code: "技能编码仅支持小写字母、数字、下划线"
+
 tenant:
   create_success: "创建租户成功"
   update_success: "更新租户成功"
