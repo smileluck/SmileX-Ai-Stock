@@ -164,8 +164,9 @@ async def fetch_daily_bars_by_security(
         "market": sec["market"],
         "code": sec["code"],
         "interval": "day",
-        "start_date": start_date,
-        "end_date": end_date,
+        # FQGate v1.0.5 起日期范围校验要求 YYYYMMDD 紧凑格式（YYYY-MM-DD 返回 1003）
+        "start_date": start_date.replace("-", ""),
+        "end_date": end_date.replace("-", ""),
         "adjust": "",
     }
 
