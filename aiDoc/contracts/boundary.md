@@ -348,6 +348,14 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 定时任务：`analysis.news_morning_generate`（cron `25,40 9 * * mon-fri`）、`analysis.news_weekly_generate`（cron `30,50 20 * * sun`，APScheduler 星期必须写 `sun`），同日去重逻辑与大盘/板块一致
 - 菜单 `ai_news-analysis`（每日资讯分析），权限复用 `analysis:list`/`analysis:run`；前端 `views/ai/news-analysis/index.vue` 复用 `analysis-report-panel.vue`（news 类型渲染两个分类列表卡片，策略抽屉隐藏研判开关）
 
+### 长期主线（2026-10-01，迁移 0050）
+
+- `business_news` 新增 `mainline_tags`（JSON，空=非主线资讯；事件/产业级口径，与 long_term_tags 的轮动主题口径并列独立成列）；采集时 `news_tagger.tag_mainline` 打标（标题命中即标、仅摘要需 ≥2 关键词，同 tag_long_term 规则）；注册表 `MAINLINE_RULES`（主线名/关键词/映射主题）初始 6 条：半导体/光通信/房地产/厄尔尼诺/美联储/地缘冲突；存量回填 `scripts/backfill_news_mainline_tags.py`（近 90 天幂等）
+- 每日资讯分析（news/morning）注入近 7 天主线分组素材（`_collect_mainline_news`，每组≤5 条总≤30 条，属外部内容可随降级摘除），prompt 要求输出 `parsed_result.mainlines[] = {name, trend(走强/走弱/延续/分歧), summary, logic, related_sectors[], news_count}`，只许选注入素材中出现的主线、≤8 条；weekly 不产出 mainlines
+- 新接口 `GET /admin/analysis/news/mainlines`（权限 `analysis:list`）→ `{analysis: mainlines[]|null, analysis_time, groups: [{name, news_count_7d, latest_news[≤5 {id,title,source_name,published_at}]}]}`，groups 按注册表全量返回（无数据主线 count=0）、按近 7 日量降序
+- 前端：news-analysis 页第三 tab「主线」→ `modules/mainline-panel.vue`（LLM 主线卡片 + 主线分组 NCollapse + 复用 info/news 的详情抽屉）；api `fetchGetNewsMainlines`；i18n `page.aiAnalysis.mainline*`（注意新增 locale 键必须同步 `typings/app.d.ts` 的 Schema，否则 TS2353）
+- 因子 DSL 新增字段 `mainline_heat`（个股近 5 日关联主线资讯条数，常量序列）：链路=个股→最新成分股快照板块→THEME_GROUPS 主题→news_tagger 主线映射反查→近5日该主线资讯计数求和；仅 `calc_factor_values` 支持注入（factor calc/screen 与 rule_executor 已接线），回测 `calc_factor_series` 无历史序列按 0 并附 warning；板块快照只覆盖活跃板块，无归属个股 heat=0
+
 ### 宏观指数（macro 新模块）
 
 - 前缀 `/admin/macro`；权限码 `macro:list`（查询）、`macro:sync`（手动同步）；指标查询参数非法错误码 11621

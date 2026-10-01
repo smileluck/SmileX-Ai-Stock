@@ -2077,6 +2077,12 @@ declare namespace App {
         sessionClose: string;
         sessionMorning: string;
         sessionWeekly: string;
+        mainlineTab: string;
+        mainlineAnalysis: string;
+        mainlineAnalysisEmpty: string;
+        mainlineGroups: string;
+        mainlineGroupEmpty: string;
+        mainlineNewsUnit: string;
         macroNewsLabel: string;
         stockNewsLabel: string;
         newsSectionEmpty: string;

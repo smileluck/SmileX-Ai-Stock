@@ -11,7 +11,7 @@
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exception.errors import RequestError
@@ -92,6 +92,77 @@ async def _latest_stock_names(db: AsyncSession, codes: list[str]) -> dict[str, s
     return names
 
 
+async def _fetch_mainline_heat(db: AsyncSession, codes: list[str]) -> dict[str, float]:
+    """个股近 5 日关联主线资讯条数（因子字段 mainline_heat 的数据源）
+
+    链路：个股 → 最新成分股快照所属板块（BusinessBoardStockDaily）
+    → 轮动主题（THEME_GROUPS 关键词）→ 关联主线（news_tagger 映射反查）
+    → 近 5 日该主线资讯条数求和。无板块归属/无主线命中 → 0。
+    任一步失败返回空 dict（字段按 NaN 处理），不阻塞因子计算。
+    """
+    from database.models.business.news import BusinessNews
+    from database.models.business.stock_market import BusinessBoardStockDaily
+    from modules.admin.services.sys.news_tagger import themes_to_mainlines
+    from modules.stock.services.rotation_service import THEME_GROUPS
+
+    try:
+        # 1. 最新快照日期的个股→板块归属
+        latest_date = (
+            await db.execute(select(func.max(BusinessBoardStockDaily.record_date)))
+        ).scalar()
+        if not latest_date:
+            return {}
+        rows = (
+            await db.execute(
+                select(BusinessBoardStockDaily.stock_code, BusinessBoardStockDaily.board_name)
+                .where(
+                    BusinessBoardStockDaily.record_date == latest_date,
+                    BusinessBoardStockDaily.stock_code.in_(codes),
+                )
+            )
+        ).all()
+
+        def board_theme(name: str) -> str | None:
+            for theme, keywords in THEME_GROUPS:
+                if any(k in name for k in keywords):
+                    return theme
+            return None
+
+        stock_mainlines: dict[str, set[str]] = {}
+        for stock_code, board_name in rows:
+            theme = board_theme(board_name)
+            if not theme:
+                continue
+            stock_mainlines.setdefault(stock_code, set()).update(themes_to_mainlines([theme]))
+        if not stock_mainlines:
+            return {code: 0.0 for code in codes}
+
+        # 2. 近 5 日各主线资讯计数（一次查询内存聚合，避免逐股查库）
+        since = timezone.now() - timedelta(days=5)
+        news_rows = (
+            await db.execute(
+                select(BusinessNews.mainline_tags)
+                .where(
+                    BusinessNews.published_at >= since,
+                    BusinessNews.mainline_tags.isnot(None),
+                    BusinessNews.deleted_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        counts: dict[str, int] = {}
+        for tags in news_rows:
+            for tag in tags or []:
+                counts[tag] = counts.get(tag, 0) + 1
+
+        return {
+            code: float(sum(counts.get(m, 0) for m in stock_mainlines.get(code, ())))
+            for code in codes
+        }
+    except Exception:
+        logger.warning("主线热度获取失败（mainline_heat 按无数据处理）", exc_info=True)
+        return {}
+
+
 class FactorCalcService:
     """因子计算与选股服务类"""
 
@@ -105,7 +176,11 @@ class FactorCalcService:
         bars_by_code, target_day, warnings = await _fetch_universe_bars(
             req.codes, req.end_date, req.lookback
         )
-        values, calc_warnings = calc_factor_values(factor.formula, bars_by_code)
+        # 公式引用 mainline_heat 时注入主线热度（近5日关联主线资讯条数）
+        heat = None
+        if "mainline_heat" in factor.formula:
+            heat = await _fetch_mainline_heat(db, list(bars_by_code.keys()))
+        values, calc_warnings = calc_factor_values(factor.formula, bars_by_code, heat)
         warnings.extend(calc_warnings)
         return {
             "factor_id": factor.id,
@@ -130,12 +205,15 @@ class FactorCalcService:
             universe, req.end_date, req.lookback
         )
 
-        # 逐因子计算（同一因子多条件只算一次）
+        # 逐因子计算（同一因子多条件只算一次）；引用 mainline_heat 的公式注入主线热度
         factor_ids = {c.factor_id for c in req.conditions}
         factors = {fid: await FactorService.get_by_id(db, fid) for fid in factor_ids}
         factor_values: dict[int, dict[str, float]] = {}
         for fid, factor in factors.items():
-            values, calc_warnings = calc_factor_values(factor.formula, bars_by_code)
+            heat = None
+            if "mainline_heat" in factor.formula:
+                heat = await _fetch_mainline_heat(db, list(bars_by_code.keys()))
+            values, calc_warnings = calc_factor_values(factor.formula, bars_by_code, heat)
             warnings.extend(calc_warnings)
             factor_values[fid] = values
 

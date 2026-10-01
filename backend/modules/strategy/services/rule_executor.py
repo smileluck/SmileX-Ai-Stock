@@ -258,9 +258,15 @@ class RuleExecutor:
                 msg=f"因子不存在或已删除: {sorted(missing)}",
             )
         factor_codes = {fid: f.code for fid, f in factors.items()}
+        # 引用 mainline_heat 的公式需注入主线热度（近5日关联主线资讯条数），按 universe 取一次
+        heat = None
+        if any("mainline_heat" in f.formula for f in factors.values()):
+            from modules.factor.services.factor_calc import _fetch_mainline_heat
+
+            heat = await _fetch_mainline_heat(db, list(bars_by_code.keys()))
         values_by_fid: dict[int, dict[str, float]] = {}
         for fid, factor in factors.items():
-            values, calc_warnings = calc_factor_values(factor.formula, bars_by_code)
+            values, calc_warnings = calc_factor_values(factor.formula, bars_by_code, heat)
             warnings.extend(calc_warnings)
             values_by_fid[fid] = values
 

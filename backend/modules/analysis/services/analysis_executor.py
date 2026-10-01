@@ -67,6 +67,10 @@ _NEWS_ANALYSIS_WEEKLY_LIMIT = 120
 _LONG_TERM_NEWS_DAYS = 90
 _LONG_TERM_NEWS_PER_TAG = 3
 _LONG_TERM_NEWS_LIMIT = 20
+# 长期主线素材：近 7 天带主线标签资讯按主线分组（每组最新 5 条，总上限 30 条）
+_MAINLINE_NEWS_DAYS = 7
+_MAINLINE_NEWS_PER_TAG = 5
+_MAINLINE_NEWS_LIMIT = 30
 
 # 后台任务强引用集合（防止 asyncio.Task 被 GC），完成后自动移除
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
@@ -373,17 +377,29 @@ _NEWS_MORNING_SYSTEM_PROMPT = """你是 SmileX-AI-Stock 平台的 AI 资讯分�
     }
   ],
   "summary": "一句话资讯面总评",      // 30 字以内
-  "key_points": ["要点1", "要点2"]   // 3-5 条核心观察
+  "key_points": ["要点1", "要点2"],   // 3-5 条核心观察
+  "mainlines": [                     // 长期主线（从注入的主线素材中提炼，按热度降序，最多 8 条）
+    {
+      "name": "半导体",              // 主线名，必须来自注入素材的主线分组名
+      "trend": "走强",               // 走强 / 走弱 / 延续 / 分歧 之一
+      "summary": "主线近况一句话",    // 40 字以内
+      "logic": "核心驱动逻辑与演化方向，80 字以内",
+      "related_sectors": ["半导体"], // 关联板块/主题
+      "news_count": 12               // 注入素材中该主线的资讯条数
+    }
+  ]
 }
 ```
 2. 再输出完整的 markdown 资讯分析报告，结构建议：
    ## 资讯面总览（消息面整体倾向）
    ## 宏观与行业资讯解读（分类点评，与宏观指数最新读数相互印证）
    ## 个股资讯解读（重点公司事件与影响）
+   ## 长期主线（各主线的演化方向、驱动逻辑与关联板块，无新进展简要带过）
    ## 长期事件跟踪（长期线索的演化与受影响板块映射，无新进展简要带过）
    ## 今日观察要点（值得跟踪的发酵线索与风险提示）
 
-筛选纪律：相似资讯必须合并为一条；与A股关联弱、纯情绪化的资讯直接忽略；两组各严格不超过 10 条。
+筛选纪律：相似资讯必须合并为一条；与A股关联弱、纯情绪化的资讯直接忽略；两组各严格不超过 10 条；mainlines 只选注入素材中真实出现的主线，无主线素材时输出空数组。
+JSON 纪律：字符串值内部禁止出现英文双引号，需要引用时一律用中文引号「」。
 报告使用中文，条理清晰，总长度控制在 800 字以内。不构成投资建议的免责声明无需输出。
 """
 
@@ -645,6 +661,63 @@ async def _collect_long_term_news(db: AsyncSession) -> str:
         f"权重独立于当日快讯，按影响标签分组，共 {count} 条）：\n" + "\n\n".join(blocks)
         + "\n处理要求：作为中线背景而非当日催化；与当日盘面/板块共振时提高权重并点明传导链"
         "（如厄尔尼诺→农产品/矿产减产→农业牧渔/有色/煤/电）；事件升级或消退时标注演化方向。"
+    )
+
+
+async def _collect_mainline_news(db: AsyncSession) -> str:
+    """长期主线素材收集：近 7 天带主线标签的资讯按主线分组（每组取最新 5 条），
+    附各主线命中计数。无主线资讯时返回空串（不阻塞分析）"""
+    from datetime import timedelta
+
+    from database.models.business.news import BusinessNews
+
+    since = timezone.now() - timedelta(days=_MAINLINE_NEWS_DAYS)
+    result = await db.execute(
+        select(BusinessNews)
+        .where(
+            BusinessNews.published_at >= since,
+            BusinessNews.mainline_tags.isnot(None),
+            BusinessNews.deleted_at.is_(None),
+        )
+        .order_by(BusinessNews.published_at.desc())
+        .limit(1000)
+    )
+    rows = result.scalars().all()
+    if not rows:
+        return ""
+
+    # 按主线分组（一条多主线归入各组），统计各主线命中数
+    by_tag: dict[str, list] = {}
+    counts: dict[str, int] = {}
+    for n in rows:
+        for tag in n.mainline_tags or []:
+            counts[tag] = counts.get(tag, 0) + 1
+            bucket = by_tag.setdefault(tag, [])
+            if len(bucket) < _MAINLINE_NEWS_PER_TAG:
+                bucket.append(n)
+
+    # 主线按命中数降序，总量收敛到上限
+    groups = sorted(by_tag.items(), key=lambda kv: counts.get(kv[0], 0), reverse=True)
+    blocks, count = [], 0
+    for tag, items in groups:
+        lines = []
+        for n in items:
+            if count >= _MAINLINE_NEWS_LIMIT:
+                break
+            ts = n.published_at.strftime("%m-%d") if n.published_at else ""
+            lines.append(f"- [{ts}] {n.title}（{n.source_name}）")
+            count += 1
+        if lines:
+            blocks.append(f"【{tag}】（近{_MAINLINE_NEWS_DAYS}天 {counts[tag]} 条）\n" + "\n".join(lines))
+        if count >= _MAINLINE_NEWS_LIMIT:
+            break
+    if not blocks:
+        return ""
+    return (
+        f"长期主线素材（近 {_MAINLINE_NEWS_DAYS} 天按主线分组，括号内为该主线资讯总量，"
+        f"共 {count} 条）：\n" + "\n\n".join(blocks)
+        + "\n处理要求：据此提炼 mainlines 数组——只选这里真实出现的主线，news_count 填括号内总量；"
+        "判断各主线演化方向（走强/走弱/延续/分歧）与核心驱动逻辑，标注关联板块。"
     )
 
 
@@ -1135,6 +1208,15 @@ class AnalysisExecutor:
         except Exception:
             logger.warning("长期事件线索获取失败（不影响分析）", exc_info=True)
 
+        # 长期主线素材（半导体/光通信/美联储等）：仅每日资讯分析（news morning）注入，
+        # 用于输出 parsed_result.mainlines；同属外部内容，命中审核时可一并摘除降级
+        mainline_prompt = ""
+        if analysis_type == "news" and session == "morning":
+            try:
+                mainline_prompt = await _collect_mainline_news(db)
+            except Exception:
+                logger.warning("长期主线素材获取失败（不影响分析）", exc_info=True)
+
         # 3. LLM 生成（系统提示词按时段/研判开关动态拼装）；
         #    资讯/宏观段放最前（行情数据 prompt 以"请基于以上真实数据输出…"收尾）
         system_prompt = _build_system_prompt(analysis_type, session, config.include_tomorrow)
@@ -1151,6 +1233,8 @@ class AnalysisExecutor:
                 segments.append(macro_prompt)
             if with_news and long_term_prompt:
                 segments.append(long_term_prompt)
+            if with_news and mainline_prompt:
+                segments.append(mainline_prompt)
             segments.append(data_prompt)
             return _build_user_prompt(analysis_type, "\n\n".join(segments), config)
 
@@ -1159,7 +1243,7 @@ class AnalysisExecutor:
                 db, analysis_type, system_prompt, _compose_user_prompt(True),
             )
         except Exception:
-            if not news_prompt and not macro_prompt and not long_term_prompt:
+            if not news_prompt and not macro_prompt and not long_term_prompt and not mainline_prompt:
                 raise
             # 资讯/宏观为外部抓取内容，可能命中 LLM 输入内容审核（如 MiniMax 敏感词 422）
             # 导致整单失败；摘除外部内容段降级重试一次，保证基于行情数据的报告仍能生成

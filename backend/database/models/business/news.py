@@ -49,6 +49,10 @@ class BusinessNews(Base):
         JSON, nullable=True, default=None,
         comment="长期事件标签（空=短期资讯；标签口径同轮动主题，采集时按关键词规则打标）",
     )
+    mainline_tags: Mapped[Optional[list]] = mapped_column(
+        JSON, nullable=True, default=None,
+        comment="长期主线标签（空=非主线资讯；事件/产业级口径，采集时按关键词规则打标）",
+    )
 
 
 class BusinessNewsSyncLog(Base):

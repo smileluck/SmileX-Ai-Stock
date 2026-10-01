@@ -53,6 +53,39 @@ declare namespace Api {
       stock_news?: NewsAnalysisItem[];
       summary?: string;
       key_points?: string[];
+      mainlines?: NewsMainlineAnalysisItem[];
+    }
+
+    /** 主线 LLM 分析项（parsed_result.mainlines） */
+    export interface NewsMainlineAnalysisItem {
+      name: string;
+      trend?: string | null;
+      summary?: string | null;
+      logic?: string | null;
+      related_sectors?: string[];
+      news_count?: number | null;
+    }
+
+    /** 主线下最新资讯条目 */
+    export interface NewsMainlineNewsItem {
+      id: number;
+      title: string;
+      source_name: string;
+      published_at: string | null;
+    }
+
+    /** 主线分组（注册表全量返回，无数据的主线 count=0） */
+    export interface NewsMainlineGroupItem {
+      name: string;
+      news_count_7d: number;
+      latest_news: NewsMainlineNewsItem[];
+    }
+
+    /** 主线页聚合结果 */
+    export interface NewsMainlinesResult {
+      analysis: NewsMainlineAnalysisItem[] | null;
+      analysis_time: string | null;
+      groups: NewsMainlineGroupItem[];
     }
 
     /** 轮动分析近期板块项（parsed_result.recent_boards） */

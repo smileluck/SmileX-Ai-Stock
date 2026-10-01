@@ -19,6 +19,7 @@ from modules.admin.deps.auth.user_manager import current_user
 from modules.admin.deps.auth.permission import require_permission
 from modules.analysis.services.analysis_executor import AnalysisExecutor
 from modules.analysis.services.analysis_config_service import AnalysisConfigService
+from modules.analysis.services.mainline_service import MainlineService
 from modules.analysis.schemas.analysis import (
     ANALYSIS_TYPES,
     ANALYSIS_TYPE_NAMES,
@@ -29,6 +30,7 @@ from modules.analysis.schemas.analysis import (
     AnalysisRunDetailItem,
     AnalysisRunItem,
     AnalysisRunSubmitResult,
+    NewsMainlinesResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -200,6 +202,22 @@ async def get_analysis_runs(
     )
     items = [AnalysisRunItem.model_validate(row) for row in result.scalars().all()]
     return response_base.success(data=_page_data(items, page, page_size, total))
+
+
+@analysis_router.get(
+    "/news/mainlines",
+    response_model=ResponseModel[NewsMainlinesResult],
+    summary="获取长期主线聚合（LLM 主线分析 + 主线分组资讯）",
+    dependencies=[Depends(require_permission("analysis:list"))],
+)
+async def get_news_mainlines(
+    user=Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """主线页数据：最近一次每日资讯分析（news/morning）的 mainlines
+    + 注册表全量主线的近 7 天资讯分组（无数据的主线 count=0）"""
+    data = await MainlineService.get_news_mainlines(db)
+    return response_base.success(data=data)
 
 
 @analysis_router.get(

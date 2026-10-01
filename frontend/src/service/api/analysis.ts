@@ -49,6 +49,14 @@ export function fetchGetAnalysisRunDetail(runId: number) {
   });
 }
 
+/** get news mainlines aggregate (LLM mainline analysis + grouped news) */
+export function fetchGetNewsMainlines() {
+  return request<Api.Analysis.NewsMainlinesResult>({
+    url: '/admin/analysis/news/mainlines',
+    method: 'get'
+  });
+}
+
 /** get analysis strategy config (returns defaults when not configured) */
 export function fetchGetAnalysisConfig(
   analysisType: Api.Analysis.AnalysisType,

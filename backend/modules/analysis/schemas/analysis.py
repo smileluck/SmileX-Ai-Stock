@@ -103,3 +103,39 @@ class AnalysisConfigUpdateRequest(BaseModel):
         None, max_length=2000,
         description="明日研判定制提示词（方法论与侧重点，空则使用内置专业研判框架）",
     )
+
+
+class NewsMainlineAnalysisItem(BaseModel):
+    """LLM 输出的单条主线分析（字段宽容，LLM 缺字段不报错）"""
+
+    name: str
+    trend: Optional[str] = None  # 走强/走弱/延续/分歧
+    summary: Optional[str] = None
+    logic: Optional[str] = None
+    related_sectors: list[str] = []
+    news_count: Optional[int] = None
+
+
+class NewsMainlineNewsItem(BaseModel):
+    """主线下最新资讯条目"""
+
+    id: int
+    title: str
+    source_name: str
+    published_at: Optional[str] = None
+
+
+class NewsMainlineGroupItem(BaseModel):
+    """主线分组（注册表全量返回，无数据的主线 count=0）"""
+
+    name: str
+    news_count_7d: int
+    latest_news: list[NewsMainlineNewsItem] = []
+
+
+class NewsMainlinesResult(BaseModel):
+    """主线页聚合结果：LLM 主线分析 + 主线分组资讯"""
+
+    analysis: Optional[list[NewsMainlineAnalysisItem]] = None  # 最近 morning 分析的 mainlines，无则 None
+    analysis_time: Optional[datetime] = None  # 该次分析生成时间
+    groups: list[NewsMainlineGroupItem] = []

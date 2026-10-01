@@ -10,6 +10,7 @@
 
 ## 需求索引
 
+- [2026-10-01 每日资讯分析「长期主线」+ 主线 Tab + 因子处理](./2026-10-01_news_mainline_and_factor.md) — business_news 加 mainline_tags（迁移 0050）+ tagger MAINLINE_RULES 六主线（半导体/光通信/房地产/厄尔尼诺/美联储/地缘冲突）+ 回填 35602 条；news/morning prompt 产出 parsed_result.mainlines（素材按主线分组注入、可降级摘除）；新接口 GET /admin/analysis/news/mainlines（注册表全量返回）；前端第三 tab「主线」；因子 DSL 新字段 mainline_heat（个股→板块→主题→主线反查近5日计数，calc/screen/rule_executor 接线，回测按 0+warning）；坑：locale 新键必须同步 typings/app.d.ts Schema；LLM JSON 字符串内英文双引号曾致解析失败→prompt 加 JSON 纪律
 - [2026-10-01 「环境配置」目录新增 FQGate 演示外部页面](./2026-10-01_fqgate_demo_menu.md) — 迁移 0049（菜单 env-config_fqgate，iframe 内嵌 https://fqgate.github.io/demo/）；**meta_href 外链方案被否**：component NULL 仅守卫 window.open + i18n 键不在生成类型内显示原始键名
 - [2026-10-01 LLM配置菜单移入「环境配置」目录](./2026-10-01_llm_config_menu_to_env_config.md) — 迁移 0048（菜单 2942406616007001 挂到 env-config CATALOG，name ai_model→env-config_model，按钮权限串 sys:ai_model:* 不动）+ 视图 git mv views/ai/model→views/env-config/model（elegant-router 自动重生成）+ locale 键 route.ai_model→route.env-config_model
 - [2026-09-30 启用 FQGate + 全部 16 条策略回测与优化](./2026-09-30_all_strategies_backtest_fqgate.md) — FQGate v1.0.5 官方发行版安装至 ~/Applications（sha256 校验+去隔离），首启风险声明确认后启用；**修复 v1.0.5 日期校验：klines 须 YYYYMMDD 格式（YYYY-MM-DD 报 1003），_fqgate.py 已改**，fqgate/test 三步全通、三源 circuit 全 closed；12 条 prompt 策略 recorded_replay（区间 08-18~09-29=信号覆盖窗口）：涨停打板 +25.32/夏普 6.11 最佳、高股息 +1.85 稳健，6 条亏损策略 sweep 27 组网格证实**信号自带价格位致风控参数失效**（5 条 27 组结果全同），唯午盘强势回踩低吸 stop 4→5 不劣于写回（+0.67→+0.96，复测逐位一致）；亏损病根在信号质量，建议停用尾盘资金抢筹/尾盘趋势确认/午盘补涨轮动/大盘共振波段（留用户决策）；坑：signal 表日期列是 run_date 且无 is_deleted

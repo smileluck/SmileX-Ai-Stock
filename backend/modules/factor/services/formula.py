@@ -7,6 +7,9 @@
 语法：
 - 字段变量（每股日线序列，值缺失为 NaN）：
   open high low close volume amount preclose pct_chg，派生 vwap = amount/volume
+- 资讯字段（每股常量序列，非行情数据）：
+  mainline_heat = 该股近5日关联主线资讯条数（经由 个股→板块→轮动主题→主线 映射；
+  仅 calc_factor_values 支持注入，回测 calc_factor_series 无历史序列按 0 处理）
 - 时间序列函数（窗口 n 为正整数常量）：
   REF(x,n) MA(x,n) SUM(x,n) MAX(x,n) MIN(x,n) STD(x,n) DELTA(x,n)
   CORR(x,y,n)（滚动相关） COUNT(cond,n)（窗口内条件为真的天数）
@@ -38,6 +41,7 @@ logger = logging.getLogger(__name__)
 # 字段变量（小写）
 _FIELD_NAMES = {
     "open", "high", "low", "close", "volume", "amount", "preclose", "pct_chg", "vwap",
+    "mainline_heat",
 }
 
 # 时间序列函数（大写）-> 参数个数
@@ -75,6 +79,14 @@ def validate_formula(formula: str) -> ast.Expression:
         raise _invalid(f"语法错误（{exc.msg}）") from exc
     _check_node(tree.body, allow_rank=True, top_level=True)
     return tree
+
+
+def _formula_uses_field(tree: ast.Expression, field_name: str) -> bool:
+    """公式 AST 是否引用了指定字段变量"""
+    return any(
+        isinstance(node, ast.Name) and node.id == field_name
+        for node in ast.walk(tree)
+    )
 
 
 def _check_node(node: ast.AST, *, allow_rank: bool, top_level: bool) -> None:
@@ -342,8 +354,14 @@ def _last_value(v: Any, length: int) -> float:
 # ----------------------------------------------------------------------
 # 对外入口
 # ----------------------------------------------------------------------
-def bars_to_env(bars: list[dict]) -> dict[str, np.ndarray]:
-    """bar dict 列表（日期升序）转字段序列环境，缺失值补 NaN"""
+def bars_to_env(
+    bars: list[dict], mainline_heat: float | None = None
+) -> dict[str, np.ndarray]:
+    """bar dict 列表（日期升序）转字段序列环境，缺失值补 NaN
+
+    mainline_heat：该股近5日关联主线资讯条数（每股常量，广播为全窗口同值序列）；
+    None 表示无数据（NaN，引用该字段的公式结果即为 NaN）
+    """
     length = len(bars)
 
     def col(key: str) -> np.ndarray:
@@ -356,6 +374,9 @@ def bars_to_env(bars: list[dict]) -> dict[str, np.ndarray]:
         "open": col("open"), "high": col("high"), "low": col("low"),
         "close": col("close"), "volume": col("volume"), "amount": col("amount"),
         "preclose": col("preclose"), "pct_chg": col("pct_chg"),
+        "mainline_heat": np.full(
+            length, mainline_heat if mainline_heat is not None else np.nan, dtype=float
+        ),
     }
     with np.errstate(divide="ignore", invalid="ignore"):
         env["vwap"] = _sanitize(env["amount"] / env["volume"])
@@ -363,9 +384,15 @@ def bars_to_env(bars: list[dict]) -> dict[str, np.ndarray]:
 
 
 def calc_factor_values(
-    formula: str, bars_by_code: dict[str, list[dict]]
+    formula: str,
+    bars_by_code: dict[str, list[dict]],
+    mainline_heat: dict[str, float] | None = None,
 ) -> tuple[dict[str, float], list[str]]:
     """对 universe 内各股计算目标日（bars 末位）因子值。
+
+    Args:
+        mainline_heat: {code: 近5日关联主线资讯条数}，可选；公式引用 mainline_heat
+            字段时由调用方注入，未注入的股票该字段为 NaN
 
     Returns:
         (values, warnings)：values 为 {code: 因子值}；
@@ -380,7 +407,7 @@ def calc_factor_values(
         if not bars:
             warnings.append(f"股票 {code} 无行情数据，跳过")
             continue
-        env = bars_to_env(bars)
+        env = bars_to_env(bars, (mainline_heat or {}).get(code))
         ctx = _EvalContext()
         value = _eval(tree.body, env, ctx, len(bars))
         per_stock[code] = (value, ctx.rank_inners, len(bars))
@@ -431,13 +458,19 @@ def calc_factor_series(
     tree = validate_formula(formula)
     warnings: list[str] = []
 
+    # mainline_heat 无历史序列（只有当前快照），回测按 0 处理并提示
+    mainline_heat: dict[str, float] | None = None
+    if _formula_uses_field(tree, "mainline_heat"):
+        warnings.append("mainline_heat 无历史序列，回测中按 0 处理")
+        mainline_heat = {code: 0.0 for code in bars_by_code}
+
     # ---- 每股阶段：时间序列求值，登记 RANK 内层序列 ----
     per_stock: dict[str, tuple[Any, list[Any], list[str], int]] = {}
     for code, bars in bars_by_code.items():
         if not bars:
             warnings.append(f"股票 {code} 无行情数据，跳过")
             continue
-        env = bars_to_env(bars)
+        env = bars_to_env(bars, (mainline_heat or {}).get(code))
         ctx = _EvalContext()
         value = _eval(tree.body, env, ctx, len(bars))
         per_stock[code] = (value, ctx.rank_inners, [b["date"] for b in bars], len(bars))

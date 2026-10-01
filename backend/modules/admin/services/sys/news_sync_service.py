@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.models.business.news import BusinessNews, BusinessNewsSyncLog
 from database.utils.timezone import timezone
 from modules.admin.services.sys.news_fetcher import NEWS_SOURCES, parse_news_time
-from modules.admin.services.sys.news_tagger import tag_long_term
+from modules.admin.services.sys.news_tagger import tag_long_term, tag_mainline
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,8 @@ class NewsSyncService:
                         published_at = parse_news_time(it.get("raw_time"))
                         # 长期事件打标（厄尔尼诺/减产/关税等长周期事件，空=短期资讯）
                         long_term_tags = tag_long_term(it.get("title"), it.get("summary"))
+                        # 长期主线打标（半导体/光通信/美联储等事件/产业级主线，空=非主线资讯）
+                        mainline_tags = tag_mainline(it.get("title"), it.get("summary"))
                         rows.append({
                             "title": it.get("title"),
                             "content": it.get("content"),
@@ -65,6 +67,7 @@ class NewsSyncService:
                             "published_at": published_at,
                             "raw_time": it.get("raw_time"),
                             "long_term_tags": long_term_tags or None,
+                            "mainline_tags": mainline_tags or None,
                             "created_at": timezone.now(),
                         })
 
