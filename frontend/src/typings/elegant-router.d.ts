@@ -35,7 +35,6 @@ declare module "@elegant-router/types" {
     "ai_financial-analysis": "/ai/financial-analysis";
     "ai_macro": "/ai/macro";
     "ai_market-analysis": "/ai/market-analysis";
-    "ai_model": "/ai/model";
     "ai_news-analysis": "/ai/news-analysis";
     "ai_research-report": "/ai/research-report";
     "ai_rotation-analysis": "/ai/rotation-analysis";
@@ -49,6 +48,7 @@ declare module "@elegant-router/types" {
     "demo_upload": "/demo/upload";
     "env-config": "/env-config";
     "env-config_datasource": "/env-config/datasource";
+    "env-config_model": "/env-config/model";
     "export-record": "/export-record";
     "home": "/home";
     "iframe-page": "/iframe-page/:url";
@@ -160,7 +160,6 @@ declare module "@elegant-router/types" {
     | "ai_financial-analysis"
     | "ai_macro"
     | "ai_market-analysis"
-    | "ai_model"
     | "ai_news-analysis"
     | "ai_research-report"
     | "ai_rotation-analysis"
@@ -171,6 +170,7 @@ declare module "@elegant-router/types" {
     | "demo_openapi-test"
     | "demo_upload"
     | "env-config_datasource"
+    | "env-config_model"
     | "export-record"
     | "home"
     | "info_news"

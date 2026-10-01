@@ -1,4 +1,4 @@
-<!-- last-updated: 2026-09-29 -->
+<!-- last-updated: 2026-10-01 -->
 # 项目记忆索引
 
 本文件是 `aiDoc/memory/` 的总入口。
@@ -9,6 +9,7 @@
 
 ## 经验记忆
 
+- [2026-10-01 窗口函数去重缺索引致列表接口超时](./lessons/2026-10-01-news-dedup-window-index-timeout.md) — 「前端加载失败」先看后端日志 elapsed；窗口/DISTINCT ON 去重必须配 partition 键部分复合索引（迁移 0047，9.6s→0.44s）
 - [2026-09-24 akshare 无超时挂死任务 + 东财 push2 IP 封禁排查](./lessons/2026-09-24-akshare-no-timeout-task-hang.md) — to_thread 必包 wait_for(30s)；push2 全域名 Empty reply=IP 级封禁（curl_cffi 也拒）；Clash TUN 下用 mihomo controller 查真实 DNS/分流；成分股兜底源选型实测（THS 按请求数限流/新浪分类不匹配/腾讯无此接口）
 - [2026-09-19 MySQL 并发唯一约束与多 worker 调度器选主](./lessons/2026-09-19-mysql-partial-unique-scheduler-leader.md) — 生成列模拟部分唯一索引；max_instances 按 job id 生效；多 worker lifespan 需 GET_LOCK 选主 + follower 写传播；非确定性判定不缓存
 
@@ -16,6 +17,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-10-01 LLM配置菜单移入「环境配置」目录](./business/2026-10-01_llm_config_menu_to_env_config.md) — 迁移 0048（ai_model→env-config_model，按钮权限串不动）+ 视图迁至 views/env-config/model + locale 键同步
 - [2026-09-29 数据源网关 + FQGate 接入 + 数据源管理面板](./business/2026-09-29_datasource_gateway_fqgate.md) — 新核心层 `core/datasource/` 统一出站网关（并发+间隔+超时+熔断+统计，sys_config `datasource.*` 配置）+ FQGate 本机同花顺网关作全链路兜底源（日K/日历/报价，未运行自动降级）+ 新模块 /admin/datasource 面板（源状态/配置/失败事件/用量图）+ 迁移 0042/0043；起因=东财 push2his IP 封禁+baostock 挂起
 - [2026-09-29 AI 推荐板块（AI 荐股：六维荐股+买点+信号直通回测/持仓）](./business/2026-09-29_stock_recommend.md) — 新模块 recommend（迁移 0040/0041）：六维度预筛 → LLM 出 10 只（涨停候选/抄底 + 预判买点）；推荐落专用策略「AI每日推荐」买入信号 → 交易引擎/持仓追踪/recorded_replay 回测零改动接入；signal 加 `entry_type`（limit=触及买点才成交）；调度 16:45；前端新页 + 首例 query 跳转消费（backtest/analysis 预填）
 - [2026-09-24 轮动成分股同步：东财降密度 + 同花顺兜底 + 双熔断](./business/2026-09-24_rotation_constituents_fallback_and_density.md) — 并发 5→3/间隔 0.1→0.3s；THS 详情页兜底（v cookie+GBK+按名解析 88/30 代码）；EM 连续 3 失败熔断、THS 限流（302 跳登录，~5-6 请求/窗）即时熔断；任务超时 900s；封禁期快照部分覆盖

@@ -180,15 +180,6 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
-        name: 'ai_model',
-        path: '/ai/model',
-        component: 'view.ai_model',
-        meta: {
-          title: 'ai_model',
-          i18nKey: 'route.ai_model'
-        }
-      },
-      {
         name: 'ai_news-analysis',
         path: '/ai/news-analysis',
         component: 'view.ai_news-analysis',
@@ -313,6 +304,15 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'env-config_datasource',
           i18nKey: 'route.env-config_datasource'
+        }
+      },
+      {
+        name: 'env-config_model',
+        path: '/env-config/model',
+        component: 'view.env-config_model',
+        meta: {
+          title: 'env-config_model',
+          i18nKey: 'route.env-config_model'
         }
       }
     ]
