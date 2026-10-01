@@ -307,6 +307,15 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'env-config_fqgate',
+        path: '/env-config/fqgate',
+        component: 'view.env-config_fqgate',
+        meta: {
+          title: 'env-config_fqgate',
+          i18nKey: 'route.env-config_fqgate'
+        }
+      },
+      {
         name: 'env-config_model',
         path: '/env-config/model',
         component: 'view.env-config_model',

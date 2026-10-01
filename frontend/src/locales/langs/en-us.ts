@@ -399,6 +399,7 @@ const local: App.I18n.Schema = {
     manage_config: 'System Config',
     'env-config_datasource': 'Data Sources',
     'env-config': 'Environment Config',
+    'env-config_fqgate': 'FQGate Demo',
     'env-config_model': 'LLM Config',
     manage_announcement: 'Announcement',
     'manage_ip-blacklist': 'IP Blacklist',

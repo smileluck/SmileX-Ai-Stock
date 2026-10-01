@@ -17,7 +17,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
-- [2026-10-01 LLM配置菜单移入「环境配置」目录](./business/2026-10-01_llm_config_menu_to_env_config.md) — 迁移 0048（ai_model→env-config_model，按钮权限串不动）+ 视图迁至 views/env-config/model + locale 键同步
+- [2026-10-01 LLM配置菜单移入「环境配置」+ 新增 FQGate 演示页](./business/2026-10-01_llm_config_menu_to_env_config.md) — 迁移 0048（ai_model→env-config_model，按钮权限串不动）+ 视图迁至 views/env-config/model；迁移 0049 新增 env-config_fqgate iframe 内嵌外部页（meta_href 外链方案因 i18n 键类型问题被否）
 - [2026-09-29 数据源网关 + FQGate 接入 + 数据源管理面板](./business/2026-09-29_datasource_gateway_fqgate.md) — 新核心层 `core/datasource/` 统一出站网关（并发+间隔+超时+熔断+统计，sys_config `datasource.*` 配置）+ FQGate 本机同花顺网关作全链路兜底源（日K/日历/报价，未运行自动降级）+ 新模块 /admin/datasource 面板（源状态/配置/失败事件/用量图）+ 迁移 0042/0043；起因=东财 push2his IP 封禁+baostock 挂起
 - [2026-09-29 AI 推荐板块（AI 荐股：六维荐股+买点+信号直通回测/持仓）](./business/2026-09-29_stock_recommend.md) — 新模块 recommend（迁移 0040/0041）：六维度预筛 → LLM 出 10 只（涨停候选/抄底 + 预判买点）；推荐落专用策略「AI每日推荐」买入信号 → 交易引擎/持仓追踪/recorded_replay 回测零改动接入；signal 加 `entry_type`（limit=触及买点才成交）；调度 16:45；前端新页 + 首例 query 跳转消费（backtest/analysis 预填）
 - [2026-09-24 轮动成分股同步：东财降密度 + 同花顺兜底 + 双熔断](./business/2026-09-24_rotation_constituents_fallback_and_density.md) — 并发 5→3/间隔 0.1→0.3s；THS 详情页兜底（v cookie+GBK+按名解析 88/30 代码）；EM 连续 3 失败熔断、THS 限流（302 跳登录，~5-6 请求/窗）即时熔断；任务超时 900s；封禁期快照部分覆盖

@@ -48,6 +48,7 @@ declare module "@elegant-router/types" {
     "demo_upload": "/demo/upload";
     "env-config": "/env-config";
     "env-config_datasource": "/env-config/datasource";
+    "env-config_fqgate": "/env-config/fqgate";
     "env-config_model": "/env-config/model";
     "export-record": "/export-record";
     "home": "/home";
@@ -170,6 +171,7 @@ declare module "@elegant-router/types" {
     | "demo_openapi-test"
     | "demo_upload"
     | "env-config_datasource"
+    | "env-config_fqgate"
     | "env-config_model"
     | "export-record"
     | "home"

@@ -395,6 +395,7 @@ const local: App.I18n.Schema = {
     manage_config: '系统配置',
     'env-config_datasource': '数据源管理',
     'env-config': '环境配置',
+    'env-config_fqgate': 'FQGate 演示',
     'env-config_model': 'LLM配置',
     manage_announcement: '通知公告',
     'manage_ip-blacklist': '黑名单管理',
