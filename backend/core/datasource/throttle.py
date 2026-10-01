@@ -4,7 +4,9 @@
 """数据源出站节流与熔断。
 
 每个数据源独立一组运行时状态：
-- 并发信号量（容量随配置变化自动重建）
+- 并发信号量（容量随配置变化自动重建）——准入队列，保证不超并发
+- 独立线程池（容量=max_concurrency，随配置重建）——同步 SDK 调用的执行层，
+  替代 asyncio.to_thread 的共享默认池，避免高并发下池耗尽或某源挂起线程拖垮其他源
 - 最小调用间隔（last_call 时间戳 + sleep 补齐）
 - 熔断器：auto 模式连续失败达标自动断开 cooldown_s；
   force_open 手动熔断 / force_closed 强制可用（面板控制）
@@ -15,6 +17,7 @@
 import asyncio
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -38,6 +41,8 @@ class SourceThrottle:
 
     semaphore: asyncio.Semaphore | None = None
     semaphore_size: int = 0
+    executor: ThreadPoolExecutor | None = None
+    executor_size: int = 0
     last_call_at: float = 0.0
     consecutive_failures: int = 0
     circuit_opened_until: float = 0.0  # monotonic 时间戳，0 表示未熔断
@@ -79,6 +84,24 @@ def acquire_semaphore(source: str, cfg: dict) -> asyncio.Semaphore:
         t.semaphore = asyncio.Semaphore(size)
         t.semaphore_size = size
     return t.semaphore
+
+
+def get_executor(source: str, cfg: dict) -> ThreadPoolExecutor:
+    """取单源独立线程池（同步 SDK 调用用），容量=max_concurrency，配置变化时重建。
+
+    旧池 shutdown(wait=False)：已在执行的任务跑完，排队任务取消；
+    线程命名 ds-<source> 便于排查。"""
+    size = max(1, int(cfg.get("max_concurrency", 2)))
+    t = _throttle(source)
+    if t.executor is None or t.executor_size != size:
+        old = t.executor
+        t.executor = ThreadPoolExecutor(
+            max_workers=size, thread_name_prefix=f"ds-{source}"
+        )
+        t.executor_size = size
+        if old is not None:
+            old.shutdown(wait=False)
+    return t.executor
 
 
 async def wait_interval(source: str, cfg: dict) -> None:

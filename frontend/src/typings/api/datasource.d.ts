@@ -35,11 +35,19 @@ declare namespace Api {
       max_latency_ms: number;
     }
 
+    /** 数据源能力项 */
+    interface Capability {
+      key: string;
+      label: string;
+    }
+
     /** 数据源运行状态 */
     interface SourceInfo {
       key: string;
       name: string;
       category: string;
+      /** 数据源支持的能力清单 */
+      capabilities: Capability[];
       call_sites: string[];
       config: SourceConfig;
       circuit_state: CircuitState;

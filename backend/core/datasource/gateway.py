@@ -18,6 +18,10 @@
 
     resp = await call_external_async("fqgate", client.post, url, json=body)
 
+同步调用经单源独立 ThreadPoolExecutor 执行（容量=max_concurrency），
+不用 asyncio.to_thread 的共享默认池，避免源间互相挤占；
+并发准入由单源信号量控制，超出并发的调用在信号量上排队等待。
+
 被禁用/熔断时抛 DataSourceUnavailableError 子类，调用方按降级链处理；
 超时统一转为 asyncio.TimeoutError；其余异常原样抛出。
 """
@@ -68,11 +72,17 @@ async def _guarded(source: str, runner: Callable[[], Any], cfg: dict) -> Any:
 
 
 async def call_external(source: str, fn: Callable, *args, **kwargs) -> Any:
-    """同步函数（如 akshare/baostock SDK）经 to_thread 执行，带统一限流与硬超时"""
+    """同步函数（如 akshare/baostock SDK）经单源独立线程池执行，带统一限流与硬超时"""
     cfg = await DataSourceConfigProvider.get_source_config(source)
-    return await _guarded(
-        source, lambda: asyncio.to_thread(fn, *args, **kwargs), cfg
-    )
+    executor = throttle.get_executor(source, cfg)
+    loop = asyncio.get_running_loop()
+
+    def runner():
+        return loop.run_in_executor(
+            executor, lambda: fn(*args, **kwargs)
+        )
+
+    return await _guarded(source, runner, cfg)
 
 
 async def call_external_async(source: str, coro_fn: Callable, *args, **kwargs) -> Any:

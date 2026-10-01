@@ -97,7 +97,7 @@ async function handleSubmit() {
           <NSwitch v-model:value="form.enabled" />
         </NFormItem>
         <NFormItem :label="$t('page.manage.datasource.configForm.maxConcurrency')" path="max_concurrency">
-          <NInputNumber v-model:value="form.max_concurrency" :min="1" :max="64" class="w-full" />
+          <NInputNumber v-model:value="form.max_concurrency" :min="1" :max="100" class="w-full" />
         </NFormItem>
         <NFormItem :label="$t('page.manage.datasource.configForm.minIntervalMs')" path="min_interval_ms">
           <NInputNumber v-model:value="form.min_interval_ms" :min="0" :step="100" class="w-full" />

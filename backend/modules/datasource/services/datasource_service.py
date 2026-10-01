@@ -33,7 +33,7 @@ _CONFIG_KEY_PREFIX = "datasource."
 # 配置项校验规则：字段 -> (类型, 最小, 最大)
 _CONFIG_RULES: dict[str, tuple[type, Any, Any]] = {
     "enabled": (bool, None, None),
-    "max_concurrency": (int, 1, 20),
+    "max_concurrency": (int, 1, 100),
     "min_interval_ms": (int, 0, 60000),
     "timeout_s": ((int, float), 1, 300),
     "failure_threshold": (int, 1, 100),
@@ -90,6 +90,7 @@ class DataSourceService:
                 "key": key,
                 "name": meta["name"],
                 "category": meta["category"],
+                "capabilities": meta.get("capabilities") or [],
                 "call_sites": meta["call_sites"],
                 "config": cfg,
                 "circuit_state": ds_throttle.circuit_state(key, cfg),

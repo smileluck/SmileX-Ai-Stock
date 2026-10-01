@@ -1,7 +1,7 @@
 <script setup lang="tsx">
 import { computed, onMounted, ref } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
-import { NButton, NCard, NDataTable, NInput, NModal, NSpace, NSpin, NSwitch, NTag, NTooltip, useMessage } from 'naive-ui';
+import { NButton, NCard, NDataTable, NInput, NModal, NPopover, NSpace, NSpin, NSwitch, NTag, NTooltip, useMessage } from 'naive-ui';
 import {
   fetchGetDataSourceEvents,
   fetchGetDataSourceList,
@@ -198,6 +198,42 @@ const columns = computed<DataTableColumns<Api.DataSource.SourceInfo>>(() => [
     align: 'center',
     minWidth: 120,
     ellipsis: { tooltip: true }
+  },
+  {
+    key: 'capabilities',
+    title: $t('page.manage.datasource.capabilities'),
+    align: 'center',
+    minWidth: 200,
+    render: row => {
+      const caps = row.capabilities || [];
+      if (!caps.length) return '-';
+      const renderTag = (cap: Api.DataSource.Capability) => (
+        <NTag size="small" bordered={false}>
+          {cap.label}
+        </NTag>
+      );
+      const visible = caps.slice(0, 3);
+      const rest = caps.slice(3);
+      return (
+        <div class="flex-center flex-wrap gap-4px">
+          {visible.map(renderTag)}
+          {rest.length > 0 && (
+            <NPopover trigger="hover">
+              {{
+                trigger: () => (
+                  <NTag size="small" type="info" class="cursor-pointer">
+                    +{rest.length}
+                  </NTag>
+                ),
+                default: () => (
+                  <div class="max-w-360px flex flex-wrap gap-4px">{caps.map(renderTag)}</div>
+                )
+              }}
+            </NPopover>
+          )}
+        </div>
+      );
+    }
   },
   {
     key: 'enabled',

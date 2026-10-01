@@ -530,12 +530,12 @@ METHOD \n PATH \n timestamp \n nonce \n app_id \n sha256(body).hexdigest()
 - 前缀 `/admin/datasource`；权限码：`datasource:list`（查询）、`datasource:config`（改配置/启停/手动熔断）、`datasource:test`（FQGate 连通性测试）
 - 接口：
   - `GET /list` → `[{key, name, category, capabilities, description, config: {enabled, max_concurrency, min_interval_ms, timeout_s, circuit_mode, circuit_failure_threshold, circuit_recovery_s}, runtime: {circuit_state, consecutive_failures, in_flight, last_error, last_error_at}, today: {total_calls, failed_calls, rejected_calls, success_rate, avg_latency_ms}}]`；`circuit_mode: auto|force_open|force_closed`（auto=自动熔断；force_open=手动熔断拒绝一切外呼；force_closed=手动恢复强制可用）；`circuit_state: closed|half_open|open`；**（2026-10-01 追加）`capabilities: [{key, label}]` 为数据源支持能力清单**——FQGate 由 `core/fqgate/capabilities.py` 的 CAPABILITY_GROUPS（17 组）生成，其余源在 `core/datasource/registry.py` 人工归纳；前端源状态表「支持能力」列 NTag 展示、超 3 个折叠 NPopover
-  - `POST /config/update`：body `{source_key, enabled?, max_concurrency?, min_interval_ms?, timeout_s?, circuit_mode?, ...}`，仅传字段生效；保存后清运行态（熔断计数归零）+ invalidate 配置缓存即时生效
+  - `POST /config/update`：body `{source_key, enabled?, max_concurrency?, min_interval_ms?, timeout_s?, circuit_mode?, ...}`，仅传字段生效；保存后清运行态（熔断计数归零）+ invalidate 配置缓存即时生效；**（2026-10-01 追加）max_concurrency 上限 100**
   - `POST /fqgate/config`：body `{base_url}`（保存 FQGate 网关地址，sys_config key `datasource.fqgate_gateway`）
   - `GET /stats?days=7` → `[{source_key, stat_hour, total_calls, failed_calls, rejected_calls, avg_latency_ms}]`（库表 `sys_data_source_stat`，按小时聚合）
   - `GET /events?source=` → 该源最近失败事件（内存环形缓冲，每源 20 条，重启清空）
   - `POST /fqgate/test` → 分步连通性测试 `[{step, ok, latency_ms, error?}]`（health → 日K → 批量报价）
-- 出站网关统一入口 `core/datasource/gateway.py`：`call_external(source, fn)`（同步，自动 to_thread）/ `call_external_async(source, coro_fn)`；所有对外 HTTP/协议调用必须经网关以获得并发信号量+最小间隔+超时+熔断+统计
+- 出站网关统一入口 `core/datasource/gateway.py`：`call_external(source, fn)`（同步，经**单源独立 ThreadPoolExecutor**，容量=max_concurrency 随配置重建，线程名 `ds-<source>`，替代 asyncio.to_thread 共享默认池）/ `call_external_async(source, coro_fn)`；所有对外 HTTP/协议调用必须经网关以获得并发信号量+最小间隔+超时+熔断+统计
 - 配置存 sys_config 表（group=`network`，key 前缀 `datasource.<source_key>`，value 为 JSON ≤255 字符），30s 进程内缓存（调用路径不回源，靠调度任务 `datasource.stats_flush` 每 60s 刷新 + 面板保存时 invalidate）
 - 统计口径：熔断/禁用拒绝计 `rejected_calls` 不计失败（未真正外呼）；失败含超时/异常；`flush_to_db()` 60s 刷盘、每日 3 点清理 30 天前
 - FQGate（source_key `fqgate`）为本机同花顺行情网关（默认 `http://127.0.0.1:17281`，无鉴权），作为日线/日历/实时报价的全链路兜底源：market_data（东财→baostock→FQGate）、market_fetcher（指数实时 东财→新浪→FQGate→baostock，指数历史末级 FQGate）、quote_helper（新浪→FQGate）；未运行时连接被拒自动降级跳过；FQGate ≥v1.0.5 日 K 请求日期必须为 YYYYMMDD 紧凑格式（YYYY-MM-DD 报 1003），适配层 `_fqgate.py` 已转换
