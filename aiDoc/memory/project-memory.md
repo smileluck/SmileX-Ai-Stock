@@ -1,4 +1,4 @@
-<!-- last-updated: 2026-10-01 -->
+<!-- last-updated: 2026-10-02 -->
 # 项目记忆索引
 
 本文件是 `aiDoc/memory/` 的总入口。
@@ -17,6 +17,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-10-02 因子/策略等落地种子数据库（迁移 0053-0055）](./business/2026-10-02_seed_landing_factor_strategy.md) — 10-01 大扩展从 /tmp 临时脚本落成正式迁移：56 因子 + 18 条 rule 预置策略（rule_config 按 code 解析防错链）+ 5 条分析 prompt + 3 条预置技能（默认停用）+ 管理员角色菜单授权补齐（111→164）；当前环境 no-op + 临时库从零全量双重验证；坑：NOT NULL 缺列被 no-op 环境掩盖，种子迁移必须全新库验证
 - [2026-10-02 系统功能审阅与修复第 2 轮（日志竞态+任务残留+策略链路 12 项）](./business/2026-10-02_system_review_round2_strategy_chain.md) — 日志轮转双进程竞态（lifespan 化修复，需重启生效）；任务 running 残留启动清扫；策略链路守卫漏网/pct=0/落库前实时价校验/idle-in-transaction 重构/tick 咨询锁/僵死接管
 - [2026-10-02 系统功能审阅与修复（持仓空列表 + 同族缺陷清理）](./business/2026-10-02_system_review_query_param_fixes.md) — 持仓空列表=NSelect清空null→qs空串→Optional[int] 422被吞；4组接口改Annotated内Query写法+axios skipNulls；uvicorn reload监听app.log日均重启214次（reload_includes修复，需手动重启）；内联Query参数=Query(None)写法会剥离BeforeValidator
 - [2026-10-01 因子与策略大规模扩展 + 全量回测优化落地](./business/2026-10-01_factor_strategy_expansion.md) — 因子 19→73 + 新增 14 条 rule 策略；三轮窗口回测后启用 4 条新优胜（龙回头 +9.50/夏普2.48 等）；Q3 熊市规律：低波/超跌反转有效、动量/突破失效；prompt 复测涨停打板 +22.65 最佳
