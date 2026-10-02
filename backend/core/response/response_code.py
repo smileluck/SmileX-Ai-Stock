@@ -149,6 +149,7 @@ class CustomErrorCode(CustomCodeBase):
     STRATEGY_RULE_NO_POOL = (11511, "error.strategy.rule_no_pool")
     POSITION_T1_LOCKED = (11512, "error.strategy.position_t1_locked")
     POSITION_PRICE_UNAVAILABLE = (11513, "error.strategy.position_price_unavailable")
+    STRATEGY_NON_TRADING_DAY = (11514, "error.strategy.non_trading_day")
     # 大盘/板块 AI 分析 11601-11700
     ANALYSIS_TYPE_INVALID = (11601, "error.analysis.type_invalid")
     ANALYSIS_RUN_NOT_FOUND = (11602, "error.analysis.run_not_found")
@@ -179,6 +180,7 @@ class CustomErrorCode(CustomCodeBase):
     # AI 推荐股票 11901-11920
     RECOMMEND_ALREADY_RUNNING = (11901, "error.recommend.already_running")
     RECOMMEND_RUN_NOT_FOUND = (11902, "error.recommend.run_not_found")
+    RECOMMEND_NON_TRADING_DAY = (11903, "error.recommend.non_trading_day")
 
 @dataclass
 class CustomResponse:

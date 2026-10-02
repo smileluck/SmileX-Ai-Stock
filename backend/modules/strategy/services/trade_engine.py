@@ -4,7 +4,8 @@
 """
 模拟交易引擎 —— 由调度任务每分钟触发一次 tick：
 1. 恢复僵死执行记录（running 超时，进程重启/异常中断兜底）
-2. 过期滞留待执行信号（收盘后作废 run_date 早于今日的信号）
+2. 过期滞留待执行信号（交易日收盘后作废 run_date 早于今日的信号；
+   非交易日不作废，信号保留至下一交易日收盘后）
 3. 交易时段内：按新浪实时价执行待执行买卖信号（先卖后买再调整），
    并刷新全部持仓最新价/浮盈、触发止损/止盈/目标价自动平仓
 
@@ -40,8 +41,9 @@ STALE_RUN_MINUTES = 15
 # 僵死 running 回测判定阈值（回测自带 BACKTEST_TIMEOUT=900s 兜底，20 分钟留余量）
 BACKTEST_STALE_MINUTES = 20
 
-# 信号过期时点：收盘后 15:05，作废 run_date 早于今日的滞留信号
-# （当日盘后分析产生的信号 run_date=今日，仍保留至下一交易日执行）
+# 信号过期时点：交易日收盘后 15:05，作废 run_date 早于今日的滞留信号
+# （非交易日不作废：节前盘后分析产生的信号保留至下一交易日执行，
+# 在该交易日 15:05 仍未成交才作废）
 SIGNAL_EXPIRE_TIME = dt_time(15, 5)
 
 # 跨进程 tick 互斥的 PG 咨询锁 key（固定 bigint，勿与其它咨询锁冲突）
@@ -70,9 +72,9 @@ QUOTE_EMPTY_ALERT_THRESHOLD = 5
 _empty_quote_ticks = 0
 
 
-async def _in_trading_hours(now: datetime) -> bool:
-    """是否处于连续竞价时段（交易日历感知：法定节假日休市，数据源故障降级周一至周五）"""
-    if not await is_trading_day(now.date()):
+def _in_trading_hours(now: datetime, today_is_trading: bool) -> bool:
+    """是否处于连续竞价时段（today_is_trading 由调用方对每个 tick 判定一次）"""
+    if not today_is_trading:
         return False
     current = now.time()
     return any(start <= current <= end for start, end in _TRADING_WINDOWS)
@@ -157,8 +159,9 @@ class TradeEngine:
         )
         total["expired_stale_backtests"] = result.rowcount or 0
 
-        # ---- 2. 信号过期：收盘后作废昨日及更早的滞留信号 ----
-        if now.time() >= SIGNAL_EXPIRE_TIME:
+        # ---- 2. 信号过期：交易日收盘后作废早于今日的滞留信号（非交易日不作废） ----
+        today_is_trading = await is_trading_day(now.date())
+        if today_is_trading and now.time() >= SIGNAL_EXPIRE_TIME:
             today = now.strftime("%Y-%m-%d")
             result = await db.execute(
                 update(BusinessStrategySignal)
@@ -167,7 +170,7 @@ class TradeEngine:
                     BusinessStrategySignal.run_date < today,
                     BusinessStrategySignal.deleted_at.is_(None),
                 )
-                .values(status="expired", result_msg="超过有效期（次日收盘后作废）")
+                .values(status="expired", result_msg="超过有效期（下一交易日收盘后作废）")
                 .execution_options(synchronize_session=False)
             )
             total["expired_signals"] = result.rowcount or 0
@@ -177,7 +180,7 @@ class TradeEngine:
             await db.commit()
 
         # ---- 3. 非交易时段：仅做维护动作 ----
-        if not await _in_trading_hours(now):
+        if not _in_trading_hours(now, today_is_trading):
             total.update({"skipped_tick": True, "reason": "非交易时段"})
             return total
 

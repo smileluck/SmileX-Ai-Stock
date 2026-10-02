@@ -10,7 +10,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_manager import get_session
+from database.utils.timezone import timezone
+from core.exception.errors import CustomError
 from core.response import ResponseModel, ResponsePageDataModel, response_base
+from core.response.response_code import CustomErrorCode
 from modules.admin.deps.auth.user_manager import current_user
 from modules.admin.deps.auth.permission import require_permission
 from modules.recommend.schemas.recommend import (
@@ -20,6 +23,7 @@ from modules.recommend.schemas.recommend import (
     RecommendStockItem,
 )
 from modules.recommend.services.recommend_service import RecommendService
+from modules.stock.services.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +49,7 @@ def _to_detail(run, stocks) -> RecommendRunDetailItem:
 @recommend_router.post(
     "/run",
     response_model=ResponseModel[RecommendRunSubmitResult],
-    summary="手动触发生成 AI 推荐股票（异步，立即返回）",
+    summary="手动触发生成 AI 推荐股票（异步，立即返回；非交易日拒绝）",
     dependencies=[Depends(require_permission("recommend:run"))],
 )
 async def run_recommend(
@@ -53,7 +57,10 @@ async def run_recommend(
     db: AsyncSession = Depends(get_session),
 ):
     """手动生成推荐：创建执行记录后立即返回，候选收集与 LLM 生成在后台进行，
-    前端轮询 latest 或 runs 接口查看进度与结果；当天已有生成中的记录时拒绝"""
+    前端轮询 latest 或 runs 接口查看进度与结果；当天已有生成中的记录时拒绝；
+    非交易日（法定节假日/调休）拒绝生成"""
+    if not await is_trading_day(timezone.now().date()):
+        raise CustomError(error=CustomErrorCode.RECOMMEND_NON_TRADING_DAY)
     run_id = await RecommendService.submit_run(db, trigger_type="manual")
     return response_base.success(
         data=RecommendRunSubmitResult(run_id=run_id),

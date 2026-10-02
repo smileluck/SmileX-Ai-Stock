@@ -485,6 +485,7 @@ strategy:
   rule_no_pool: "Rule strategy requires a non-empty stock pool"
   position_t1_locked: "Positions bought today cannot be sold (T+1 rule)"
   position_price_unavailable: "Latest quote unavailable, please specify the close price explicitly"
+  non_trading_day: "Today is not a trading day (market closed), strategy execution rejected"
 
 backtest:
   not_found: "Backtest record not found"
@@ -501,3 +502,4 @@ factor:
 recommend:
   already_running: "Today's recommendations are being generated, please try again later"
   run_not_found: "Recommend run not found or deleted"
+  non_trading_day: "Today is not a trading day (market closed), recommendation not generated"

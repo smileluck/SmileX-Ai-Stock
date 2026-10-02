@@ -5,7 +5,8 @@
 
 ## 长期记忆
 
-暂无。
+- [交易时机纪律（开盘日操作 + T+1）](./long-term/trading-timing-discipline.md) — 非交易日不建仓/不操作，只在开盘日交易；A 股个股 T+1 次日可卖，T+0 ETF（跨境/债券/货币/商品）例外；操作前先查交易日历
+- [Web 安全防护现状与约束](./long-term/web-security.md) — SQL 注入/XSS/安全头/限流/上传校验现状；CSRF、Token 存储、富文本清洗的既有取舍与新增字段约束
 
 ## 经验记忆
 
@@ -16,6 +17,8 @@
 ## 业务需求记忆
 
 详细索引见 [business/README.md](./business/README.md)。近期：
+
+- [2026-10-02 交易时机纪律落地：开盘日才交易 + 休市日误买入清理](./business/2026-10-02_trading_day_discipline_guards.md) — 日历陈旧降级长假 fail-open 致休市日假成交；修复=FQGate 权威日历 + 信号有效期交易日口径 + 行情新鲜度双保险 + recommend/手动端点守卫（11514/11903）；清理误建仓 9 笔 + 置废信号 24 条；须重启生效
 
 - [2026-10-02 因子/策略等落地种子数据库（迁移 0053-0055）](./business/2026-10-02_seed_landing_factor_strategy.md) — 10-01 大扩展从 /tmp 临时脚本落成正式迁移：56 因子 + 18 条 rule 预置策略（rule_config 按 code 解析防错链）+ 5 条分析 prompt + 3 条预置技能（默认停用）+ 管理员角色菜单授权补齐（111→164）；当前环境 no-op + 临时库从零全量双重验证；坑：NOT NULL 缺列被 no-op 环境掩盖，种子迁移必须全新库验证
 - [2026-10-02 系统功能审阅与修复第 2 轮（日志竞态+任务残留+策略链路 12 项）](./business/2026-10-02_system_review_round2_strategy_chain.md) — 日志轮转双进程竞态（lifespan 化修复，需重启生效）；任务 running 残留启动清扫；策略链路守卫漏网/pct=0/落库前实时价校验/idle-in-transaction 重构/tick 咨询锁/僵死接管

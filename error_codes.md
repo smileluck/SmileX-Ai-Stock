@@ -89,6 +89,7 @@
 | 11511 | 规则型策略必须配置非空股票池 | STRATEGY_RULE_NO_POOL |
 | 11512 | 当日买入的持仓不可卖出（T+1 规则） | POSITION_T1_LOCKED |
 | 11513 | 无法获取最新行情价格，请显式指定平仓价格 | POSITION_PRICE_UNAVAILABLE |
+| 11514 | 今日非交易日（休市），不可执行策略 | STRATEGY_NON_TRADING_DAY |
 
 ### 9. 策略回测 (11701-11800)
 | 错误码 | 错误信息 | 常量名 |
@@ -111,6 +112,7 @@
 |-------|---------|--------|
 | 11901 | 今日推荐正在生成中，请稍后再试 | RECOMMEND_ALREADY_RUNNING |
 | 11902 | 推荐记录不存在或已删除 | RECOMMEND_RUN_NOT_FOUND |
+| 11903 | 今日非交易日（休市），不生成推荐 | RECOMMEND_NON_TRADING_DAY |
 
 ## 二、标准响应状态码
 

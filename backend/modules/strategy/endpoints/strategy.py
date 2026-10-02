@@ -11,16 +11,20 @@ from pydantic import BeforeValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_manager import get_session
+from database.utils.timezone import timezone
+from core.exception.errors import CustomError
 from core.response import (
     ResponseModel,
     ResponsePageDataModel,
     ResponsePageModel,
     response_base,
 )
+from core.response.response_code import CustomErrorCode
 from modules.admin.deps.auth.user_manager import current_user
 from modules.admin.deps.auth.permission import require_permission
 from modules.common.schemas.base import parse_bool
 from modules.common.schemas.page import PageRequest, get_page_params, get_paginated_results
+from modules.stock.services.trading_calendar import is_trading_day
 from modules.strategy.services.strategy_service import StrategyService
 from modules.strategy.schemas.strategy import (
     StrategyCreateRequest,
@@ -229,7 +233,7 @@ async def export_strategy(
 @strategy_router.post(
     "/{strategy_id}/run",
     response_model=ResponseModel[StrategyRunSubmitResult],
-    summary="手动触发一次策略执行（异步，立即返回）",
+    summary="手动触发一次策略执行（异步，立即返回；非交易日拒绝）",
     dependencies=[Depends(require_permission("strategy:run"))],
 )
 async def run_strategy(
@@ -239,7 +243,10 @@ async def run_strategy(
 ):
     """手动执行策略：创建执行记录后立即返回，分析/评估在后台进行；
     prompt 型走 LLM 分析，rule 型走规则评估；
-    产出的买卖信号由每分钟交易引擎按实时价执行模拟买卖"""
+    产出的买卖信号由每分钟交易引擎按实时价执行模拟买卖；
+    非交易日（法定节假日/调休）拒绝执行"""
+    if not await is_trading_day(timezone.now().date()):
+        raise CustomError(error=CustomErrorCode.STRATEGY_NON_TRADING_DAY)
     run_id = await StrategyService.submit_run(
         db, strategy_id, run_period="manual", trigger_type="manual"
     )
