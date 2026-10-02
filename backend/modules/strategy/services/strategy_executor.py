@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import timedelta
 from typing import Any, Optional
 
 from sqlalchemy import select, update
@@ -35,6 +36,10 @@ from modules.agent.services.llm_client import resolve_model, stream_chat
 from modules.agent.services.tool_registry import get_openai_format, execute
 from modules.strategy.schemas.strategy import SignalItem
 from modules.strategy.services.quote_helper import fetch_latest_prices
+from modules.strategy.services.trade_engine import (
+    REF_PRICE_MAX_DEVIATION_PCT,
+    STALE_RUN_MINUTES,
+)
 logger = logging.getLogger(__name__)
 
 # ReAct 最大迭代轮数（与 agent_service 保持一致）
@@ -253,7 +258,11 @@ def _build_user_prompt(
         hold_lines = []
         for h in holdings:
             cur = realtime_quotes.get(h.stock_code) if realtime_quotes else None
-            chg = f"{(cur / float(h.buy_price) - 1) * 100:+.1f}%" if cur else "未知"
+            chg = (
+                f"{(cur / float(h.buy_price) - 1) * 100:+.1f}%"
+                if cur and h.buy_price and h.buy_price > 0
+                else "未知"
+            )
             # 回撤止盈上下文：持仓期间峰值与距峰值的回撤幅度
             trail = ""
             if h.peak_price is not None and h.trailing_drawdown_pct is not None and cur:
@@ -316,17 +325,49 @@ class StrategyExecutor:
         （生成列 running_key）兜底，IntegrityError 同样转为 STRATEGY_ALREADY_RUNNING。
         """
         dup = await db.execute(
-            select(BusinessStrategyRun.id).where(
+            select(BusinessStrategyRun.id, BusinessStrategyRun.created_at).where(
                 BusinessStrategyRun.strategy_id == strategy.id,
                 BusinessStrategyRun.status == "running",
                 BusinessStrategyRun.deleted_at.is_(None),
             ).limit(1)
         )
-        if dup.scalar_one_or_none() is not None:
-            raise CustomError(
-                error=CustomErrorCode.STRATEGY_ALREADY_RUNNING,
-                msg="该策略正在执行中，请稍后再试",
-            )
+        dup_row = dup.first()
+        if dup_row is not None:
+            # 僵死接管：running 记录超过 STALE_RUN_MINUTES 未完成（内部已有 600s
+            # wait_for 兜底仍残留，多为进程重启遗留）。trade_engine 的僵死恢复只在
+            # 交易时段运行，晚间/周末提交会被占位锁阻塞到次交易日，故在冲突路径上
+            # 就地判定并接管（条件 UPDATE 与并发接管者互斥）。
+            stale_cutoff = timezone.now() - timedelta(minutes=STALE_RUN_MINUTES)
+            if dup_row.created_at < stale_cutoff:
+                result = await db.execute(
+                    update(BusinessStrategyRun)
+                    .where(
+                        BusinessStrategyRun.id == dup_row.id,
+                        BusinessStrategyRun.status == "running",
+                        BusinessStrategyRun.deleted_at.is_(None),
+                    )
+                    .values(
+                        status="failed",
+                        error_msg=f"执行超时（超过 {STALE_RUN_MINUTES} 分钟未完成，被新提交接管）",
+                    )
+                    .execution_options(synchronize_session=False)
+                )
+                if (result.rowcount or 0) == 1:
+                    logger.warning(
+                        "接管僵死 running 记录: run_id=%s strategy=%s",
+                        dup_row.id, strategy.name,
+                    )
+                    await db.commit()
+                else:
+                    raise CustomError(
+                        error=CustomErrorCode.STRATEGY_ALREADY_RUNNING,
+                        msg="该策略正在执行中，请稍后再试",
+                    )
+            else:
+                raise CustomError(
+                    error=CustomErrorCode.STRATEGY_ALREADY_RUNNING,
+                    msg="该策略正在执行中，请稍后再试",
+                )
 
         now = timezone.now()
         run = BusinessStrategyRun(
@@ -437,6 +478,11 @@ class StrategyExecutor:
         )
         holdings = list(hold_result.scalars().all())
 
+        # 快照读到此为止：先结束读事务再进入行情抓取/LLM 网络阶段（最长 600s），
+        # 避免长时间 idle-in-transaction 占用连接、阻碍 vacuum（expire_on_commit=False，
+        # 已加载的 run/strategy/holdings 属性在 commit 后仍可读）
+        await db.commit()
+
         # 2. 拉取候选股实时行情（股票池 ∪ 持仓股，新浪实时接口）
         #    AI 工具数据多为收盘后快照，buy_price 参考价必须锚定实时价，防过期/幻觉价
         pool = (strategy.stock_pool or {}).get("codes") if strategy.stock_pool else None
@@ -485,6 +531,55 @@ class StrategyExecutor:
             .values(status="expired", result_msg="被新一轮分析信号替换")
             .execution_options(synchronize_session=False)
         )
+
+        # 5.5 落库前实时价校验：无池策略的 LLM 自选股不在第 2 步快照（池∪持仓）内，
+        #     buy 参考价可能无锚。补拉缺失行情；缺价丢弃该条；参考价缺失/非法/偏差
+        #     超阈值时重锚为实时价并丢弃 LLM 价格位（交由 trade_engine 按策略 pct 重算）。
+        buy_missing = sorted({
+            s.stock_code for s in signals
+            if s.action == "buy" and s.stock_code not in realtime_quotes
+        })
+        if buy_missing:
+            try:
+                realtime_quotes.update(await fetch_latest_prices(buy_missing))
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "落库前补拉实时行情失败: codes=%s", buy_missing, exc_info=True
+                )
+        validated: list[SignalItem] = []
+        dropped_no_quote: list[str] = []
+        reanchored: list[str] = []
+        for s in signals:
+            if s.action != "buy":
+                validated.append(s)
+                continue
+            rt = realtime_quotes.get(s.stock_code)
+            if not rt or float(rt) <= 0:
+                dropped_no_quote.append(s.stock_code)
+                continue
+            orig = s.buy_price
+            if (
+                orig is None
+                or float(orig) <= 0
+                or abs(float(rt) - float(orig)) / float(rt) * 100 > REF_PRICE_MAX_DEVIATION_PCT
+            ):
+                note = (
+                    f"落库校验：参考价 {orig if orig is not None else '缺失'} 偏离实时价 "
+                    f"{float(rt):g} 超 {REF_PRICE_MAX_DEVIATION_PCT}%，重锚为实时价"
+                )
+                s.buy_price = round(float(rt), 4)
+                s.stop_loss_price = None
+                s.target_sell_price = None
+                s.reason = f"{s.reason} | {note}" if s.reason else note
+                reanchored.append(s.stock_code)
+            validated.append(s)
+        signals = validated
+        if dropped_no_quote or reanchored:
+            logger.warning(
+                "落库前实时价校验: strategy=%s 丢弃缺价 buy=%s 重锚=%s",
+                strategy.name, dropped_no_quote, reanchored,
+            )
+            run.parsed_signals = [s.model_dump() for s in signals]
 
         # 6. 写入新待执行信号（hold 无点位变化，不落表）
         pending = 0

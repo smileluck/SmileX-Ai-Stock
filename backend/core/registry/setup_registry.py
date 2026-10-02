@@ -1,7 +1,6 @@
 from core.exception import setup_exception_handlers, setup_exception_global_handlers
 from database.plugins import setup_soft_delete_plug
 from fastapi import FastAPI
-from core.log import setup_logging
 from core.middleware.share_middleware import RequestContextMiddleware
 from core.middleware.security_middleware import (
     RequestAuditMiddleware,
@@ -46,8 +45,10 @@ def setup_app(app: FastAPI, settings: GlobalSetting):
     setup_exception_global_handlers(app)
     # 注册软删除插件
     setup_soft_delete_plug()
-    # 注册日志
-    setup_logging()
+    # 注意：日志初始化（setup_logging）不在此时机调用——本函数在模块导入期执行，
+    # uvicorn reload 父进程（python main.py）与 worker 子进程会各打开一份
+    # logs/app.log 的轮转 handler，午夜双重轮转竞态会互相覆盖/删除归档。
+    # 文件日志改在 main.lifespan 启动期配置（仅真正服务请求的进程）。
     # 预加载 i18n 文案目录（启动时加载一次，避免首请求时延迟）
     from core.i18n import load_catalogs, supported_locales
 

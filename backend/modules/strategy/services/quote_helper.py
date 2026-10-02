@@ -15,12 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def _to_sina_code(code: str) -> str:
-    """6位证券代码 → 新浪格式：sh600519 / sz000001 / bj430047"""
+    """6位证券代码 → 新浪格式：sh600519 / sz000001 / bj430047 / sh510300(ETF)"""
     if code.startswith(("sh", "sz", "bj")):
         return code
-    if code.startswith(("6", "9")):
+    # 5=沪市 ETF/基金（510300 等），9=沪 B/科创存托；1=深市 ETF/基金/可转债（159915/123456 等）
+    if code.startswith(("6", "9", "5")):
         return f"sh{code}"
-    if code.startswith(("0", "2", "3")):
+    if code.startswith(("0", "2", "3", "1")):
         return f"sz{code}"
     if code.startswith(("4", "8")):
         return f"bj{code}"

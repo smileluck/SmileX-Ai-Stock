@@ -238,6 +238,11 @@ class RuleExecutor:
         holding_codes = {p.stock_code for p in holdings}
 
         universe = list(dict.fromkeys([*pool_codes, *holding_codes]))
+
+        # 快照读到此为止：先结束读事务再进入行情抓取网络阶段，
+        # 避免长时间 idle-in-transaction（expire_on_commit=False，ORM 属性仍可读）
+        await db.commit()
+
         bars_by_code, target_day, warnings = await _fetch_universe_bars(
             universe, None, RULE_LOOKBACK
         )

@@ -50,10 +50,11 @@ def _sanitize_price_levels(
     无效价格位按策略止损/止盈百分比重算。"""
     stop = stop_loss_price
     if stop is None or stop >= price:
-        stop = round(price * (1 - stop_loss_pct / 100), 4) if stop_loss_pct is not None else None
+        # pct=0 视同未配置（按 0 重算=买价，建仓立即触发平仓），与 trade_engine 口径一致
+        stop = round(price * (1 - stop_loss_pct / 100), 4) if stop_loss_pct not in (None, 0) else None
     target = target_sell_price
     if target is None or target <= price:
-        target = round(price * (1 + take_profit_pct / 100), 4) if take_profit_pct is not None else None
+        target = round(price * (1 + take_profit_pct / 100), 4) if take_profit_pct not in (None, 0) else None
     return stop, target
 
 

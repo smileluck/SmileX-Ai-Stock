@@ -11,9 +11,9 @@
   生成，D 日开盘成交，无前视）
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exception.errors import CustomError
@@ -72,17 +72,51 @@ class BacktestService:
             )
 
         dup = await db.execute(
-            select(BusinessBacktest.id).where(
+            select(BusinessBacktest.id, BusinessBacktest.created_at).where(
                 BusinessBacktest.strategy_id == strategy.id,
                 BusinessBacktest.status == "running",
                 BusinessBacktest.deleted_at.is_(None),
             ).limit(1)
         )
-        if dup.scalar_one_or_none() is not None:
-            raise CustomError(
-                error=CustomErrorCode.BACKTEST_RUNNING_CONFLICT,
-                msg="该策略有正在运行的回测，请稍后再试",
-            )
+        dup_row = dup.first()
+        if dup_row is not None:
+            # 僵死接管：trade_engine 的回测僵死恢复只在交易时段运行，晚间/周末创建
+            # 回测会被残留 running 占位锁阻塞到次交易日，就地判定并接管（条件 UPDATE
+            # 与并发接管者互斥；阈值对齐 trade_engine.BACKTEST_STALE_MINUTES）
+            from modules.strategy.services.trade_engine import BACKTEST_STALE_MINUTES
+            from database.utils.timezone import timezone
+            stale_cutoff = timezone.now() - timedelta(minutes=BACKTEST_STALE_MINUTES)
+            if dup_row.created_at < stale_cutoff:
+                result = await db.execute(
+                    update(BusinessBacktest)
+                    .where(
+                        BusinessBacktest.id == dup_row.id,
+                        BusinessBacktest.status == "running",
+                        BusinessBacktest.deleted_at.is_(None),
+                    )
+                    .values(
+                        status="failed",
+                        error_msg=f"执行超时（超过 {BACKTEST_STALE_MINUTES} 分钟未完成，被新提交接管）",
+                        finished_at=timezone.now(),
+                    )
+                    .execution_options(synchronize_session=False)
+                )
+                if (result.rowcount or 0) == 1:
+                    logger.warning(
+                        "接管僵死 running 回测: backtest_id=%s strategy=%s",
+                        dup_row.id, strategy.name,
+                    )
+                    await db.commit()
+                else:
+                    raise CustomError(
+                        error=CustomErrorCode.BACKTEST_RUNNING_CONFLICT,
+                        msg="该策略有正在运行的回测，请稍后再试",
+                    )
+            else:
+                raise CustomError(
+                    error=CustomErrorCode.BACKTEST_RUNNING_CONFLICT,
+                    msg="该策略有正在运行的回测，请稍后再试",
+                )
 
         backtest = BusinessBacktest(
             strategy_id=strategy.id,

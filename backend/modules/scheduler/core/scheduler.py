@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.jobstores.base import ConflictingIdError
@@ -37,6 +37,61 @@ _task_execution_locks: dict[int, asyncio.Lock] = {}
 # sync_jobs_from_db 会保留该 job，避免全量同步时把自己删掉
 RESYNC_JOB_ID = "__scheduler_db_resync__"
 RESYNC_INTERVAL_SECONDS = 60
+
+# running 残留清扫阈值：进程死亡后任务行/日志行会永远停在 running（不影响
+# 后续调度，只误导状态展示）。超过该时长仍为 running 的视为孤儿，置 failed。
+# 取 2 小时可覆盖所有任务 timeout（最长 900s）并避开其他 worker 手动触发中的任务
+STALE_RUNNING_SWEEP_THRESHOLD = timedelta(hours=2)
+
+
+async def recover_stale_running_tasks(db: AsyncSession) -> tuple[int, int]:
+    """清扫进程死亡遗留的 running 状态（leader 启动时调用一次）。
+
+    返回 (清扫日志行数, 清扫任务行数)。
+    """
+    now = datetime.now(ZoneInfo(DEFAULT_TIMEZONE))
+    cutoff = now - STALE_RUNNING_SWEEP_THRESHOLD
+
+    logs = (
+        (
+            await db.execute(
+                select(SysScheduledTaskLog).where(
+                    SysScheduledTaskLog.status == "running",
+                    SysScheduledTaskLog.start_time < cutoff,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for log in logs:
+        log.status = "failed"
+        log.end_time = log.end_time or now
+        log.error_message = "进程重启/中断导致 running 状态残留，启动清扫置为 failed"
+
+    tasks = (
+        (
+            await db.execute(
+                select(SysScheduledTask).where(
+                    SysScheduledTask.last_status == "running",
+                    SysScheduledTask.last_run_at < cutoff,
+                    SysScheduledTask.deleted_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for task in tasks:
+        task.last_status = "failed"
+
+    if logs or tasks:
+        await db.commit()
+        logger.info(
+            "启动清扫 running 残留：任务日志 %s 行、任务 %s 行已置 failed",
+            len(logs), len(tasks),
+        )
+    return len(logs), len(tasks)
 
 
 class SchedulerManager:

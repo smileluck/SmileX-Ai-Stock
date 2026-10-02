@@ -17,6 +17,7 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-10-02 系统功能审阅与修复第 2 轮（日志竞态+任务残留+策略链路 12 项）](./business/2026-10-02_system_review_round2_strategy_chain.md) — 日志轮转双进程竞态（lifespan 化修复，需重启生效）；任务 running 残留启动清扫；策略链路守卫漏网/pct=0/落库前实时价校验/idle-in-transaction 重构/tick 咨询锁/僵死接管
 - [2026-10-02 系统功能审阅与修复（持仓空列表 + 同族缺陷清理）](./business/2026-10-02_system_review_query_param_fixes.md) — 持仓空列表=NSelect清空null→qs空串→Optional[int] 422被吞；4组接口改Annotated内Query写法+axios skipNulls；uvicorn reload监听app.log日均重启214次（reload_includes修复，需手动重启）；内联Query参数=Query(None)写法会剥离BeforeValidator
 - [2026-10-01 因子与策略大规模扩展 + 全量回测优化落地](./business/2026-10-01_factor_strategy_expansion.md) — 因子 19→73 + 新增 14 条 rule 策略；三轮窗口回测后启用 4 条新优胜（龙回头 +9.50/夏普2.48 等）；Q3 熊市规律：低波/超跌反转有效、动量/突破失效；prompt 复测涨停打板 +22.65 最佳
 - [2026-10-01 数据源并发上限 100 + 出站同步调用改单源独立线程池](./business/2026-10-01_datasource_concurrency_100.md) — throttle 新增每源 ThreadPoolExecutor（容量=max_concurrency，线程名 ds-<source>），gateway.call_external 弃 to_thread 共享默认池；校验上限 20→100

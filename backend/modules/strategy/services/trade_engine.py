@@ -13,7 +13,7 @@
 import logging
 from datetime import datetime, time as dt_time, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models.business.strategy import (
@@ -43,6 +43,9 @@ BACKTEST_STALE_MINUTES = 20
 # 信号过期时点：收盘后 15:05，作废 run_date 早于今日的滞留信号
 # （当日盘后分析产生的信号 run_date=今日，仍保留至下一交易日执行）
 SIGNAL_EXPIRE_TIME = dt_time(15, 5)
+
+# 跨进程 tick 互斥的 PG 咨询锁 key（固定 bigint，勿与其它咨询锁冲突）
+TICK_ADVISORY_LOCK_KEY = 9150_1100_01
 
 # 连续竞价时段（信号执行与持仓跟踪窗口，周一至周五）
 _TRADING_WINDOWS: tuple[tuple[dt_time, dt_time], ...] = (
@@ -94,11 +97,14 @@ def _sanitize_price_levels(
     """
     stop = stop_loss_price
     if stop is None or stop >= price:
-        pct = float(strategy.stop_loss_pct) if strategy.stop_loss_pct is not None else None
+        # pct=0 视同未配置：按 0 重算出的止损/目标 = 买价，建仓下一 tick 即触发平仓
+        raw = strategy.stop_loss_pct
+        pct = float(raw) if raw not in (None, 0) else None
         stop = round(price * (1 - pct / 100), 4) if pct is not None else None
     target = target_sell_price
     if target is None or target <= price:
-        pct = float(strategy.take_profit_pct) if strategy.take_profit_pct is not None else None
+        raw = strategy.take_profit_pct
+        pct = float(raw) if raw not in (None, 0) else None
         target = round(price * (1 + pct / 100), 4) if pct is not None else None
     return stop, target
 
@@ -174,6 +180,16 @@ class TradeEngine:
         if not await _in_trading_hours(now):
             total.update({"skipped_tick": True, "reason": "非交易时段"})
             return total
+
+        # ---- 3.5 跨进程 tick 互斥 ----
+        # 单进程内已由调度器 max_instances=1 保证串行；跨进程（cron tick 与手动补跑
+        # 并行、未来多 worker）时，持仓快照/max_positions 检查存在竞态：两个执行者
+        # 各自认领同策略不同 buy 信号会双双通过上限检查导致超仓。事务级咨询锁把
+        # 「快照加载→执行→落库」整段串行化，tick 最终 commit/回滚时自动释放（本段
+        # 之前仅有维护性 commit，锁后直到结尾无中间 commit）。
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(:k)"), {"k": TICK_ADVISORY_LOCK_KEY}
+        )
 
         # ---- 4. 启用策略与待执行信号 ----
         str_result = await db.execute(
@@ -335,20 +351,28 @@ class TradeEngine:
                 # 口径差异：rule 策略参考价锚定 D-1 收盘价（rule_executor），
                 # 高开/低开超阈值是正常行情而非 LLM 价格失真，故 rule 策略跳过该守卫；
                 # limit 建仓方式同样跳过（买点低于现价属预期偏差）。
-                elif sig.ref_buy_price and strategy.strategy_type != "rule":
+                elif strategy.strategy_type != "rule":
+                    # prompt 型 buy 必须有有效参考价锚：缺失/非法说明 LLM 未按行情
+                    # 快照出价（无池策略自选股场景），无锚建仓等于放弃全部价格位可信度
+                    if not sig.ref_buy_price or float(sig.ref_buy_price) <= 0:
+                        if await TradeEngine._claim_signal(
+                            db, sig, status="skipped",
+                            result_msg="参考价缺失或非法（未按行情快照出价），拒单",
+                        ):
+                            total["skipped"] += 1
+                        continue
                     ref = float(sig.ref_buy_price)
-                    if ref > 0:
-                        deviation_pct = abs(price - ref) / ref * 100
-                        if deviation_pct > REF_PRICE_MAX_DEVIATION_PCT:
-                            if await TradeEngine._claim_signal(
-                                db, sig, status="skipped",
-                                result_msg=(
-                                    f"实时价 {price} 与参考价 {ref} 偏差 {deviation_pct:.1f}% "
-                                    f"(>{REF_PRICE_MAX_DEVIATION_PCT}%)，拒单"
-                                ),
-                            ):
-                                total["skipped"] += 1
-                            continue
+                    deviation_pct = abs(price - ref) / ref * 100
+                    if deviation_pct > REF_PRICE_MAX_DEVIATION_PCT:
+                        if await TradeEngine._claim_signal(
+                            db, sig, status="skipped",
+                            result_msg=(
+                                f"实时价 {price} 与参考价 {ref} 偏差 {deviation_pct:.1f}% "
+                                f"(>{REF_PRICE_MAX_DEVIATION_PCT}%)，拒单"
+                            ),
+                        ):
+                            total["skipped"] += 1
+                        continue
                 # 先条件 UPDATE 认领信号再建仓：并发执行者只有一个认领成功，杜绝重复建仓
                 if not await TradeEngine._claim_signal(
                     db, sig, status="executed", executed_at=now, executed_price=price,

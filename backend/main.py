@@ -41,6 +41,11 @@ logger = getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 文件日志仅在实际服务进程配置：模块导入期的 setup_logging 会让 uvicorn reload
+    # 父进程也持有 logs/app.log 的轮转 handler，午夜双重轮转竞态会覆盖丢失归档日志
+    from core.log import setup_logging
+
+    setup_logging()
     loop = asyncio.get_running_loop()
     # 初始化数据库连接池
     logger.info("初始化数据库连接池")
@@ -105,6 +110,12 @@ async def lifespan(app: FastAPI):
             logger.warning("定时任务种子数据加载失败，部分预置任务可能缺失: %s", exc)
         async for db_sync in get_session():
             await manager.sync_jobs_from_db(db_sync)
+            # 清扫进程死亡遗留的 running 残留状态（非致命，失败仅告警）
+            try:
+                from modules.scheduler.core.scheduler import recover_stale_running_tasks
+                await recover_stale_running_tasks(db_sync)
+            except Exception as exc:
+                logger.warning("清扫 running 任务残留状态失败: %s", exc)
         logger.info("定时任务同步完成")
         # 周期性全量 resync：follower worker 上的任务 CRUD 只写 DB，
         # 靠这个内置 job 传播到本 leader 进程的调度器；调度器停止时随之消失

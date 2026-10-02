@@ -226,7 +226,9 @@ class BacktestRunner:
                 "reason": row.reason,
             })
 
-        # 抓取行情：交易日历（上证指数）+ 个股日线（akshare 主源、baostock 降级）
+        # 抓取行情：交易日历（上证指数）+ 个股日线（akshare 主源、baostock 降级）。
+        # 信号行已转内存字典，先结束读事务再进长网络抓取，避免 idle-in-transaction
+        await db.commit()
         market = await fetch_market_data(
             sorted(stock_codes), start_date, end_date
         ) if stock_codes else {"trading_days": [], "bars": {}, "failed_codes": []}
@@ -306,7 +308,9 @@ class BacktestRunner:
             )
         factor_codes = {fid: f.code for fid, f in factors.items()}
 
-        # 行情窗口前置 lookback×2 自然日（供窗口函数预热）；交易日序列截取回测区间
+        # 行情窗口前置 lookback×2 自然日（供窗口函数预热）；交易日序列截取回测区间。
+        # 因子快照已读齐，先结束读事务再进长网络抓取，避免 idle-in-transaction
+        await db.commit()
         start = datetime.strptime(start_date, "%Y-%m-%d").date()
         fetch_start = (start - timedelta(days=RULE_LOOKBACK * 2)).strftime("%Y-%m-%d")
         market = await fetch_market_data(supported, fetch_start, end_date)

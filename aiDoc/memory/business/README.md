@@ -10,6 +10,7 @@
 
 ## 需求索引
 
+- [2026-10-02 系统功能审阅与修复第 2 轮（日志竞态+任务残留+策略链路 12 项）](./2026-10-02_system_review_round2_strategy_chain.md) — P0=reload父/子双进程各持日志handler午夜轮转竞态丢档（修：setup_logging 移 lifespan）；P1=任务 running 残留清扫（leader 启动时 >2h 置 failed，实跑清 37 行）；策略链路：prompt buy 缺 ref 拒单、pct=0 视同未配置、落库前补拉+重锚无池自选股、ETF/转债前缀、4 处 idle-in-transaction 重构、tick 跨进程 advisory 锁、submit_run/回测僵死就地接管；修正第 1 轮 reload 根因误判（uvicorn 0.40 默认只 reload .py）
 - [2026-10-02 系统功能审阅与修复（持仓空列表 + 同族缺陷清理）](./2026-10-02_system_review_query_param_fixes.md) — AI分析持仓空列表根因=NSelect清空null→qs序列化成`key=`空串→Optional[int] 422被前端静默吞；修复4组接口（内联Query参数BeforeValidator必须`Query()`放Annotated内，`=Query(None)`写法校验器被剥离）+axios skipNulls；另修uvicorn reload监听logs/app.log致日均重启214次杀定时任务（reload_includes=["*.py"]，需手动重启生效）、两处ResponseModel(data=None)二次500；浏览器E2E清空筛选后20行持仓恢复
 - [2026-10-01 因子与策略大规模扩展 + 全量回测优化落地](./2026-10-01_factor_strategy_expansion.md) — 新增 54 因子（19→73，Alpha101/华泰/开源金工）+ 14 条 rule 策略（沪深300/中证500 池）；三轮窗口回测（HS300 Q2 +10.02/Q3 -12.38/全窗 -4.00）：启用 4 条新优胜（龙回头 sweep take30→20 复测 +9.50/夏普2.48、低波稳健、52周新高、超跌反转Pro）；Q3 熊市规律再确认（超跌反转 +12.58、低波红利 +16.74/夏普4.35 最强，动量/突破失效）；prompt 复测涨停打板 +22.65/夏普5.28 最佳；坑：250 日窗口因子短窗口回测全 NaN 0 笔属预期、回测串行防东财封 IP
 - [2026-10-01 数据源并发上限 100 + 出站同步调用改单源独立线程池](./2026-10-01_datasource_concurrency_100.md) — throttle 新增每源 ThreadPoolExecutor（容量=max_concurrency 随配置重建，线程名 ds-<source>），gateway.call_external 弃 to_thread 共享默认池；校验上限 20→100，前端抽屉 64→100；实测并发未超上限且池隔离
