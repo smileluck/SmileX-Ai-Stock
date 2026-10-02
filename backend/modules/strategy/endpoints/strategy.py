@@ -4,7 +4,10 @@
 """
 AI 分析策略相关接口
 """
+from typing import Annotated, Optional
+
 from fastapi import APIRouter, Depends, Query
+from pydantic import BeforeValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_manager import get_session
@@ -16,6 +19,7 @@ from core.response import (
 )
 from modules.admin.deps.auth.user_manager import current_user
 from modules.admin.deps.auth.permission import require_permission
+from modules.common.schemas.base import parse_bool
 from modules.common.schemas.page import PageRequest, get_page_params, get_paginated_results
 from modules.strategy.services.strategy_service import StrategyService
 from modules.strategy.schemas.strategy import (
@@ -43,7 +47,7 @@ strategy_router = APIRouter(prefix="/strategies", tags=["AI助手/AI分析"])
 )
 async def get_strategy_list(
     name: str | None = Query(None, description="策略名称模糊查询"),
-    status: bool | None = Query(None, description="状态过滤"),
+    status: Annotated[Optional[bool], Query(description="状态过滤"), BeforeValidator(parse_bool)] = None,
     category: str | None = Query(None, description="策略分类过滤：pre_market_auction/noon/tail/blue_chip/general"),
     page_params: PageRequest = Depends(get_page_params),
     user=Depends(current_user),

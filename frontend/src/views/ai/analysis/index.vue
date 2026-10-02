@@ -529,7 +529,7 @@ async function loadPositions(silent = false) {
   try {
     const range = positionTimeRange.value;
     const { data, error } = await fetchGetStrategyPositions({
-      strategy_id: positionSearch.strategy_id,
+      strategy_id: positionSearch.strategy_id || undefined,
       status: positionSearch.status,
       stock_code: positionSearch.stock_code || undefined,
       start_time: range ? dayjs(range[0]).format('YYYY-MM-DDTHH:mm:ss') : undefined,

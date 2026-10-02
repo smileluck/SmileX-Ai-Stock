@@ -50,7 +50,9 @@ export function createAxiosConfig(config?: Partial<CreateAxiosDefaults>) {
     },
     validateStatus: isHttpSuccess,
     paramsSerializer: params => {
-      return stringify(params);
+      // skipNulls: 响应式筛选状态（NSelect 清空等）产生 null 时直接丢弃该参数，
+      // 避免 qs 默认把 null 序列化成 "key=" 空串触发后端 422/静默过滤
+      return stringify(params, { skipNulls: true });
     }
   };
 

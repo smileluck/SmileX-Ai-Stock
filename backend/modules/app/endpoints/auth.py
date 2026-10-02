@@ -213,15 +213,12 @@ async def update_current_user_info(
     db: Session = Depends(get_session),
 ):
     """更新当前登录用户信息"""
-    try:
-        user_id = user_update.id
-        # 用 Pydantic v2 推荐的 model_dump
-        update_data = user_update.model_dump(exclude_unset=True)
-        # 调用你的 user_manager 更新逻辑
-        update_info = await update_user_info(db, user_id, update_data)
-        return response_base.success(msg=t("auth.user_info_update_success"), data=update_info)
-    except Exception as e:
-        return ResponseModel(code=500, msg=t("auth.user_info_update_failed", error=str(e)))
+    user_id = user_update.id
+    # 用 Pydantic v2 推荐的 model_dump
+    update_data = user_update.model_dump(exclude_unset=True)
+    # 调用你的 user_manager 更新逻辑
+    update_info = await update_user_info(db, user_id, update_data)
+    return response_base.success(msg=t("auth.user_info_update_success"), data=update_info)
 
 
 # 刷新令牌路由

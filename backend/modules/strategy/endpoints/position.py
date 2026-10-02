@@ -4,9 +4,10 @@
 """
 AI 分析策略持仓相关接口
 """
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BeforeValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_manager import get_session
@@ -18,6 +19,7 @@ from core.response import (
 )
 from modules.admin.deps.auth.user_manager import current_user
 from modules.admin.deps.auth.permission import require_permission
+from modules.common.schemas.base import parse_bool, parse_optional_int
 from modules.common.schemas.page import PageRequest, get_page_params
 from modules.strategy.services.position_service import PositionService
 from modules.strategy.schemas.strategy import (
@@ -42,7 +44,7 @@ stats_router = APIRouter(prefix="/stats", tags=["AI助手/AI分析"])
     dependencies=[Depends(require_permission("strategy:position:list"))],
 )
 async def get_positions(
-    strategy_id: Optional[int] = Query(None, description="策略 ID 过滤"),
+    strategy_id: Annotated[Optional[int], Query(description="策略 ID 过滤"), BeforeValidator(parse_optional_int)] = None,
     status: Optional[str] = Query(None, description="持仓状态：holding/closed/cancelled"),
     stock_code: Optional[str] = Query(None, description="证券代码模糊查询"),
     start_time: Optional[str] = Query(None, description="建仓时间起（ISO 8601，如 2026-08-01T00:00:00）"),
@@ -50,7 +52,7 @@ async def get_positions(
     sort_by: Optional[str] = Query(
         None, description="排序列：buy_time/sell_time/pnl/return_rate；为空时默认持仓中在前+建仓时间倒序"
     ),
-    sort_desc: bool = Query(False, description="是否倒序排序，配合 sort_by 使用"),
+    sort_desc: Annotated[Optional[bool], Query(description="是否倒序排序，配合 sort_by 使用"), BeforeValidator(parse_bool)] = False,
     page_params: PageRequest = Depends(get_page_params),
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
@@ -125,7 +127,7 @@ async def get_position_tracks(
     dependencies=[Depends(require_permission("strategy:position:list"))],
 )
 async def get_stats(
-    strategy_id: Optional[int] = Query(None, description="策略 ID 过滤，为空返回全部"),
+    strategy_id: Annotated[Optional[int], Query(description="策略 ID 过滤，为空返回全部"), BeforeValidator(parse_optional_int)] = None,
     user=Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):

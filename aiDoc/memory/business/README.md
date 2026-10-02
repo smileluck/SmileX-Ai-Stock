@@ -10,6 +10,8 @@
 
 ## 需求索引
 
+- [2026-10-02 系统功能审阅与修复（持仓空列表 + 同族缺陷清理）](./2026-10-02_system_review_query_param_fixes.md) — AI分析持仓空列表根因=NSelect清空null→qs序列化成`key=`空串→Optional[int] 422被前端静默吞；修复4组接口（内联Query参数BeforeValidator必须`Query()`放Annotated内，`=Query(None)`写法校验器被剥离）+axios skipNulls；另修uvicorn reload监听logs/app.log致日均重启214次杀定时任务（reload_includes=["*.py"]，需手动重启生效）、两处ResponseModel(data=None)二次500；浏览器E2E清空筛选后20行持仓恢复
+- [2026-10-01 因子与策略大规模扩展 + 全量回测优化落地](./2026-10-01_factor_strategy_expansion.md) — 新增 54 因子（19→73，Alpha101/华泰/开源金工）+ 14 条 rule 策略（沪深300/中证500 池）；三轮窗口回测（HS300 Q2 +10.02/Q3 -12.38/全窗 -4.00）：启用 4 条新优胜（龙回头 sweep take30→20 复测 +9.50/夏普2.48、低波稳健、52周新高、超跌反转Pro）；Q3 熊市规律再确认（超跌反转 +12.58、低波红利 +16.74/夏普4.35 最强，动量/突破失效）；prompt 复测涨停打板 +22.65/夏普5.28 最佳；坑：250 日窗口因子短窗口回测全 NaN 0 笔属预期、回测串行防东财封 IP
 - [2026-10-01 数据源并发上限 100 + 出站同步调用改单源独立线程池](./2026-10-01_datasource_concurrency_100.md) — throttle 新增每源 ThreadPoolExecutor（容量=max_concurrency 随配置重建，线程名 ds-<source>），gateway.call_external 弃 to_thread 共享默认池；校验上限 20→100，前端抽屉 64→100；实测并发未超上限且池隔离
 - [2026-10-01 Skills 管理（AI 助手技能包）](./2026-10-01_skill_management.md) — 新表 sys_skill + 新模块 modules/skill（/admin/skill，权限 skill:list/manage，沿用 mcpserver 范式无新错误码）+ 迁移 0052（环境配置目录菜单 8049-8051）+ Agent 对话注入启用技能进 system prompt（sort 升序、失败不阻塞）；前端 views/env-config/skill（照搬 mcp-server 页模式）；顺带补登 0051 漏的 SysMcpServer → alembic/env.py import
 - [2026-10-01 FQGate HTTP 全量封装为独立服务能力 + 数据源能力清单面板](./2026-10-01_fqgate_full_http_service.md) — 新核心包 `core/fqgate/`（client 统一信封+网关限流、capabilities 17 组元数据唯一真源、15 个分组模块约 100 端点全量封装、stream 提供 ws_url/SSE 低级能力）；`_fqgate.py` 降为 A 股薄适配层（签名不变，交易日历改专用接口 trading-days、600519 日K 推导降级保留）；registry 每源加 capabilities 并在数据源面板「支持能力」列展示；坑：catalog.complete_code 批量字段名 codes 为推断待实测

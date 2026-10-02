@@ -153,7 +153,7 @@ async function loadList(silent = false) {
   if (!silent) listLoading.value = true;
   try {
     const { data, error } = await fetchGetBacktestList({
-      strategy_id: listSearch.strategy_id ?? undefined,
+      strategy_id: listSearch.strategy_id || undefined,
       status: listSearch.status ?? undefined,
       page: listPage.page,
       page_size: listPage.pageSize

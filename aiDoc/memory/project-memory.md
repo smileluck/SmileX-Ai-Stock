@@ -17,6 +17,8 @@
 
 详细索引见 [business/README.md](./business/README.md)。近期：
 
+- [2026-10-02 系统功能审阅与修复（持仓空列表 + 同族缺陷清理）](./business/2026-10-02_system_review_query_param_fixes.md) — 持仓空列表=NSelect清空null→qs空串→Optional[int] 422被吞；4组接口改Annotated内Query写法+axios skipNulls；uvicorn reload监听app.log日均重启214次（reload_includes修复，需手动重启）；内联Query参数=Query(None)写法会剥离BeforeValidator
+- [2026-10-01 因子与策略大规模扩展 + 全量回测优化落地](./business/2026-10-01_factor_strategy_expansion.md) — 因子 19→73 + 新增 14 条 rule 策略；三轮窗口回测后启用 4 条新优胜（龙回头 +9.50/夏普2.48 等）；Q3 熊市规律：低波/超跌反转有效、动量/突破失效；prompt 复测涨停打板 +22.65 最佳
 - [2026-10-01 数据源并发上限 100 + 出站同步调用改单源独立线程池](./business/2026-10-01_datasource_concurrency_100.md) — throttle 新增每源 ThreadPoolExecutor（容量=max_concurrency，线程名 ds-<source>），gateway.call_external 弃 to_thread 共享默认池；校验上限 20→100
 - [2026-10-01 Skills 管理（AI 助手技能包）](./business/2026-10-01_skill_management.md) — 新表 sys_skill + /admin/skill（skill:list/manage）+ 迁移 0052 菜单种子 + Agent 对话注入启用技能进 system prompt；前端 env-config/skill 页
 - [2026-10-01 FQGate HTTP 全量封装为独立服务能力 + 数据源能力清单面板](./business/2026-10-01_fqgate_full_http_service.md) — 新核心包 `core/fqgate/`（client/capabilities + 15 个分组模块约 100 端点）；`_fqgate.py` 降为 A 股薄适配层（签名不变，日历改 trading-days 专用接口）；registry 每源加 capabilities，数据源面板新增「支持能力」列

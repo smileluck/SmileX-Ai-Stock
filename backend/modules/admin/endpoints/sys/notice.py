@@ -8,7 +8,7 @@
 import logging
 from typing import List
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_manager import get_session
@@ -213,7 +213,7 @@ async def publish_notice(
     connection_manager = getattr(request.app.state, "connection_manager", None)
     if connection_manager is None:
         logger.error("发布通知失败: connection_manager 未初始化")
-        return ResponseModel(msg=t("notice.server_error_no_manager"), code=500)
+        raise HTTPException(status_code=500, detail=t("notice.server_error_no_manager"))
 
     notice = await NoticeService.publish_notice(db, notice_id, connection_manager)
     notice_response = SysNoticeResponse.model_validate(notice)

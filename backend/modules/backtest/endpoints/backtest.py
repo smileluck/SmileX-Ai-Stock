@@ -10,12 +10,15 @@
 止损/止盈/回撤止盈/涨停暂缓/T+1 与实盘交易引擎语义一致。
 """
 import logging
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BeforeValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_manager import get_session
 from core.response import ResponseModel, ResponsePageDataModel, response_base
+from modules.common.schemas.base import parse_optional_int
 from modules.admin.deps.auth.user_manager import current_user
 from modules.admin.deps.auth.permission import require_permission
 from modules.backtest.schemas.backtest import (
@@ -90,7 +93,7 @@ async def sweep_backtest(
     dependencies=[Depends(require_permission("strategy:manage"))],
 )
 async def get_backtest_list(
-    strategy_id: int | None = Query(None, description="策略 ID 过滤"),
+    strategy_id: Annotated[Optional[int], Query(description="策略 ID 过滤"), BeforeValidator(parse_optional_int)] = None,
     status: str | None = Query(None, description="状态过滤：running/success/failed"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),

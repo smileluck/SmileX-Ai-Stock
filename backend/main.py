@@ -222,4 +222,6 @@ if __name__ == "__main__":
 
     # 运行应用
     logger.info("启动应用...")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # 只监听 .py 变更：logs/ 下日志写入会触发默认监听，导致进程反复热重载、
+    # 正在执行的定时任务（trade_engine 等）被 CancelledError 杀掉
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_includes=["*.py"])
